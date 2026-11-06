@@ -1,0 +1,33 @@
+name: ZeroHunter AI Agent
+on:
+  issues:
+    types: [opened]
+permissions:
+  issues: write
+  contents: read
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Ollama Models
+        uses: actions/cache@v3
+        with:
+          path: ~/.ollama
+          key: ollama-qwen-1.5b
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
+      - name: Start Ollama and Pull Model
+        run: |
+          ollama serve &
+          sleep 5
+          ollama pull qwen2.5-coder:1.5b
+      - name: Install Security Tools
+        run: sudo apt-get update && sudo apt-get install -y clang llvm nmap curl jq python3
+      - name: Run Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          REPO: ${{ github.repository }}
+        run: python3 agent.py

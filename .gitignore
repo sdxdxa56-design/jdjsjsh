@@ -1,0 +1,6 @@
+crashes/
+corpus/
+reports/
+__pycache__/
+*.pyc
+fuzz_*
