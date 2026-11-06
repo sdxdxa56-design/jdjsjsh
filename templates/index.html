@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroHunter Chat</title>
+    <style>
+        body { font-family: sans-serif; background: #1e1e24; color: #fff; margin: 0; padding: 20px; }
+        #chat-box { height: 70vh; overflow-y: auto; border: 1px solid #333; border-radius: 10px; padding: 15px; background: #2a2a35; margin-bottom: 10px; }
+        .msg { margin-bottom: 10px; padding: 10px; border-radius: 8px; max-width: 80%; word-wrap: break-word; white-space: pre-wrap; }
+        .user { background: #007bff; align-self: flex-end; margin-left: auto; }
+        .bot { background: #444; align-self: flex-start; margin-right: auto; }
+        .input-area { display: flex; gap: 10px; }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: none; background: #333; color: #fff; }
+        button { padding: 12px 20px; border: none; border-radius: 8px; background: #28a745; color: #fff; font-weight: bold; cursor: pointer; }
+        button:disabled { background: #555; }
+    </style>
+</head>
+<body>
+    <h2>🛡️ ZeroHunter AI</h2>
+    <div id="chat-box">
+        <div class="msg bot">مرحباً! اكتب طلبك الأمني (مثلاً: "Write a C buffer overflow and run it"). سأقوم بتنفيذه في سيرفرات GitHub وأعيد لك النتيجة.</div>
+    </div>
+    <div class="input-area">
+        <input type="text" id="msg-input" placeholder="اكتب طلبك هنا..." onkeypress="if(event.key==='Enter') sendMsg()">
+        <button id="send-btn" onclick="sendMsg()">إرسال</button>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const input = document.getElementById('msg-input');
+        const btn = document.getElementById('send-btn');
+
+        function addMsg(text, cls) {
+            const div = document.createElement('div');
+            div.className = `msg ${cls}`;
+            div.innerText = text;
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return div;
+        }
+
+        async function sendMsg() {
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            btn.disabled = true;
+            addMsg(text, 'user');
+            const botMsg = addMsg('⏳ جاري إنشاء الطلب في GitHub...', 'bot');
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({message: text})
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                pollStatus(data.issue_id, botMsg);
+            } catch (e) {
+                botMsg.innerText = '❌ خطأ: ' + e.message;
+                btn.disabled = false;
+            }
+        }
+
+        async function pollStatus(issueId, botMsg) {
+            let seconds = 0;
+            const interval = setInterval(async () => {
+                seconds += 3;
+                try {
+                    const res = await fetch(`/api/status/${issueId}`);
+                    const data = await res.json();
+                    botMsg.innerText = data.reply;
+                    if (data.status === 'done') {
+                        clearInterval(interval);
+                        btn.disabled = false;
+                    } else {
+                        botMsg.innerText += `\n(انتظر... ${seconds} ثانية)`;
+                    }
+                } catch (e) {
+                    botMsg.innerText = '❌ فشل الاتصال بالخادم';
+                    clearInterval(interval);
+                    btn.disabled = false;
+                }
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
