@@ -2,39 +2,41 @@ name: ZeroHunter Fast Agent
 on:
   issues:
     types: [opened]
+
 permissions:
   issues: write
   contents: read
+  packages: read
+
 jobs:
   run-agent:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/sdxdxa56-design/jdjsjsh/zerohunter:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Cache Ollama Models
         uses: actions/cache@v3
         with:
-          path: ~/.ollama
+          path: /root/.ollama
           key: ollama-qwen-1.5b-fast
-      - name: Install Ollama
-        run: curl -fsSL https://ollama.com/install.sh | sh
-      - name: Start Ollama (1.5B for speed)
+
+      - name: Start Ollama and Pull Model
         run: |
           ollama serve &
           sleep 3
           ollama pull qwen2.5-coder:1.5b
-      - name: Install Arsenal
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang llvm nmap curl jq python3 gobuster sqlmap wfuzz afl++ radamsa git
-          pip3 install semgrep
-          go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-          go install -v github.com/projectdiscovery/ffuf@latest
+
       - name: Run Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           REPO: ${{ github.repository }}
-          PATH: ${{ github.workspace }}/go/bin:/usr/local/go/bin:$PATH
         run: python3 agent.py
