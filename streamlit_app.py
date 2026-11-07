@@ -2,9 +2,14 @@ import streamlit as st
 import requests
 import time
 
-st.set_page_config(page_title="ZeroHunter AI", page_icon="🛡️")
-st.title("🛡️ ZeroHunter Autonomous AI")
-st.markdown("أدخل هدفك (موقع، IP، أو اسم مكتبة). الوكيل سيفحصه ويكتشف الثغرات.")
+st.set_page_config(page_title="ZeroHunter Jabar", page_icon="🛡️", layout="wide")
+st.title("🛡️ ZeroHunter Jabar - Zero-Day Hunter")
+st.markdown("""
+**كيف تستخدم الوكيل؟**
+*   **موقع ويب:** اكتب `Scan https://example.com with nuclei and ffuf`
+*   **كود مصدري:** اكتب `Clone https://github.com/user/repo and fuzz it with semgrep and AFL`
+*   **شبكة محلية (راوترك):** استخدم **Pinggy/Ngrok** للحصول على رابط عام، ثم أرسل الرابط للوكيل.
+""")
 
 REPO = "sdxdxa56-design/jdjsjsh"
 github_token = st.secrets.get("GITHUB_TOKEN", "")
@@ -19,7 +24,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("مثال: Scan example.com with nuclei and nmap..."):
+if prompt := st.chat_input("اكتب هدفك... (مثال: Clone cJSON and fuzz it)"):
     if not github_token:
         st.error("التوكن مطلوب!")
         st.stop()
@@ -33,10 +38,10 @@ if prompt := st.chat_input("مثال: Scan example.com with nuclei and nmap...")
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("جاري إرسال الهدف إلى GitHub Actions..."):
+        with st.spinner("جاري إرسال الهدف إلى خوادم GitHub..."):
             headers = {"Authorization": f"token {github_token}", "Accept": "application/vnd.github.v3+json"}
             url = f"https://api.github.com/repos/{REPO}/issues"
-            payload = {"title": f"Target: {prompt[:30]}...", "body": prompt}
+            payload = {"title": f"Zero-Day Target: {prompt[:30]}...", "body": prompt}
             resp = requests.post(url, headers=headers, json=payload)
             
             if resp.status_code != 201:
@@ -45,17 +50,17 @@ if prompt := st.chat_input("مثال: Scan example.com with nuclei and nmap...")
             
             issue_num = resp.json()["number"]
             status_box = st.empty()
-            status_box.info(f"المهمة #{issue_num} قيد التنفيذ. الوكيل يفكر الآن (قد يأخذ 3-5 دقائق)...")
+            status_box.info(f"المهمة #{issue_num} قيد التنفيذ. الوكيل يفكر ويجرب (قد يأخذ 5-10 دقائق)...")
             
             final_reply = ""
-            for _ in range(150): 
+            for _ in range(200): # الانتظار حتى 20 دقيقة
                 time.sleep(6)
                 c_url = f"https://api.github.com/repos/{REPO}/issues/{issue_num}/comments"
                 c_resp = requests.get(c_url, headers=headers).json()
                 comments = [c["body"] for c in c_resp]
                 
                 for c in comments:
-                    if "🏁 **التقرير النهائي:**" in c:
+                    if "🏁 **التقرير النهائي" in c:
                         final_reply = c
                         break
                     elif "❌ فشل النموذج" in c or "❌ خطأ:" in c:
@@ -65,7 +70,7 @@ if prompt := st.chat_input("مثال: Scan example.com with nuclei and nmap...")
                     break
                     
                 if comments:
-                    status_box.info(f"⏳ حالة الوكيل: {comments[-1][:100]}...")
+                    status_box.info(f"⏳ حالة الوكيل: {comments[-1][:120]}...")
             
             status_box.empty()
             if final_reply:

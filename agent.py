@@ -10,21 +10,33 @@ def post_comment(msg):
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     requests.post(url, headers=headers, json={"body": msg})
 
-post_comment(f"🤖 **ZeroHunter (7B):** استلمت طلبك: `{ISSUE_BODY}`\nسأبدأ العمل في حلقات (تحليل -> تنفيذ -> تقييم). يرجى الانتظار...")
+post_comment(f"🤖 **ZeroHunter (Jabar):** استلمت الهدف. سأبدأ خطة الهجوم الشاملة (Zero-Day Hunting)...")
 
-system_prompt = """You are ZeroHunter, an autonomous penetration testing AI.
-You have access to: nmap, nuclei, ffuf, gobuster, subfinder, clang, and Linux tools.
-You operate in a loop. I give you the objective and history. 
+system_prompt = """You are ZeroHunter Jabar, an elite autonomous zero-day hunter.
+You have access to: nmap, nuclei, ffuf, sqlmap, semgrep, afl++, radamsa, clang, git, and standard Linux tools.
+Your objective is to find vulnerabilities. You must think step-by-step.
+
+PLAYBOOK:
+1. If target is a SOURCE CODE (e.g., GitHub link): 
+   -> git clone <url> 
+   -> semgrep --config auto <dir>
+   -> Look for memory bugs, write a harness, compile with clang -fsanitize=fuzzer,address, and run it.
+2. If target is a WEB URL: 
+   -> nuclei -u <url>
+   -> ffuf -u <url>/FUZZ -w /usr/share/wordlists/dirb/common.txt
+   -> Check for SQLi with sqlmap.
+3. If target is an IP (Ngrok/Pinggy): -> nmap -sV <ip>
+4. If you find a crash (ASan output) or a vulnerability, analyze it and explain it.
+
 Reply with exactly ONE JSON object:
 {"action": "run_command", "command": "bash_command_here"}
-OR if done or found vulnerability:
-{"action": "finish", "report": "Detailed report of findings and ideas."}
+OR if you are done: {"action": "finish", "report": "Detailed report of findings."}
 Do NOT output markdown. ONLY valid JSON."""
 
 messages = [{"role": "system", "content": system_prompt}]
-context = f"User objective: {ISSUE_BODY}\nHistory:\n"
+context = f"Target objective: {ISSUE_BODY}\nHistory:\n"
 
-max_steps = 5
+max_steps = 10 # 10 حلقات تفكير عميقة
 for step in range(max_steps):
     messages.append({"role": "user", "content": context + "\nWhat is your next step?"})
     
@@ -37,18 +49,19 @@ for step in range(max_steps):
         break
 
     if ai_resp.get("action") == "finish":
-        post_comment(f"🏁 **التقرير النهائي:**\n\n{ai_resp.get('report')}")
+        post_comment(f"🏁 **التقرير النهائي للثغرات:**\n\n{ai_resp.get('report')}")
         break
         
     cmd = ai_resp.get("command", "")
     post_comment(f"⚙️ **الخطوة {step+1}:**\n```bash\n{cmd}\n```\n⏳ *جاري التنفيذ...*")
     
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+        # استخدام مهلة 10 دقائق للسماح للفاحص بالعمل
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
         out = result.stdout + result.stderr
-        if len(out) > 3000: out = out[:3000] + "\n...[مختصر]"
+        if len(out) > 4000: out = out[:4000] + "\n...[مختصر]"
     except subprocess.TimeoutExpired:
-        out = "[انتهى الوقت - الأمر استغرق أكثر من 5 دقائق]"
+        out = "[انتهى الوقت - الأمر استغرق أكثر من 10 دقائق]"
     except Exception as e:
         out = str(e)
         
