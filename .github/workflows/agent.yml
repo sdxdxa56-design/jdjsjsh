@@ -1,4 +1,4 @@
-name: ZeroHunter Jabar Agent
+name: ZeroHunter Fast Agent
 on:
   issues:
     types: [opened]
@@ -8,30 +8,29 @@ permissions:
 jobs:
   run-agent:
     runs-on: ubuntu-latest
-    timeout-minutes: 90 # زيادة الوقت للفحوصات العميقة
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Cache Ollama Models
         uses: actions/cache@v3
         with:
           path: ~/.ollama
-          key: ollama-qwen-7b-v1
+          key: ollama-qwen-1.5b-fast
       - name: Install Ollama
         run: curl -fsSL https://ollama.com/install.sh | sh
-      - name: Start Ollama and Pull Model (7B)
+      - name: Start Ollama (1.5B for speed)
         run: |
           ollama serve &
-          sleep 5
-          ollama pull qwen2.5-coder:7b
-      - name: Install Arsenal (Fuzzers, Static Analysis, Web Tools)
+          sleep 3
+          ollama pull qwen2.5-coder:1.5b
+      - name: Install Arsenal
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang llvm nmap curl jq python3 gobuster dirb sqlmap wfuzz afl++ radamsa git
+          sudo apt-get install -y clang llvm nmap curl jq python3 gobuster sqlmap wfuzz afl++ radamsa git
           pip3 install semgrep
           go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
           go install -v github.com/projectdiscovery/ffuf@latest
-          go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
-      - name: Run Jabar Agent
+      - name: Run Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}

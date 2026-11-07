@@ -36,12 +36,12 @@ Do NOT output markdown. ONLY valid JSON."""
 messages = [{"role": "system", "content": system_prompt}]
 context = f"Target objective: {ISSUE_BODY}\nHistory:\n"
 
-max_steps = 10 # 10 حلقات تفكير عميقة
+max_steps = 5 # 10 حلقات تفكير عميقة
 for step in range(max_steps):
     messages.append({"role": "user", "content": context + "\nWhat is your next step?"})
     
     try:
-        payload = {"model": "qwen2.5-coder:7b", "messages": messages, "stream": False, "format": "json"}
+        payload = {"model": "qwen2.5-coder:1.5b", "messages": messages, "stream": False, "format": "json"}
         resp = requests.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=300).json()
         ai_resp = json.loads(resp['message']['content'])
     except Exception as e:
