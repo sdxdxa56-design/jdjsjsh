@@ -11,10 +11,10 @@ RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
 FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. تحديث القوائم أولاً
+# 1. تحديث القوائم
 RUN apt-get update
 
-# 2. تثبيت الأدوات مع إعادة المحاولة
+# 2. تثبيت الأدوات الأساسية (بدون مشاكل)
 RUN for i in 1 2 3; do \
         apt-get install -y --no-install-recommends \
         curl git jq python3 python3-pip python3-venv \
@@ -22,14 +22,17 @@ RUN for i in 1 2 3; do \
     done \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. نسخ أدوات Go الجاهزة
+# 3. ترقية pip أولاً (حل جذري للمشكلة)
+RUN python3 -m pip install --upgrade pip
+
+# 4. تثبيت أدوات Python (بدون الخيار المسبب للمشكلة)
+RUN python3 -m pip install semgrep requests
+
+# 5. نسخ أدوات Go الجاهزة
 COPY --from=go-builder /go/bin/nuclei /usr/local/bin/
 COPY --from=go-builder /go/bin/ffuf /usr/local/bin/
 
-# 4. تثبيت أدوات Python
-RUN pip3 install --break-system-packages semgrep requests
-
-# 5. تثبيت Ollama
+# 6. تثبيت Ollama
 RUN curl -fsSL https://ollama.com/install.sh | sh
 
 WORKDIR /app
