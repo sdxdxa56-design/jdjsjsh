@@ -10,58 +10,50 @@ def post_comment(msg):
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     requests.post(url, headers=headers, json={"body": msg})
 
-post_comment(f"🤖 **ZeroHunter (Jabar):** استلمت الهدف. سأبدأ خطة الهجوم الشاملة (Zero-Day Hunting)...")
+post_comment(f"🤖 **ZeroHunter:** استلمت الهدف `{ISSUE_BODY}`. جاري التفكير...")
 
-system_prompt = """You are ZeroHunter Jabar, an elite autonomous zero-day hunter.
-You have access to: nmap, nuclei, ffuf, sqlmap, semgrep, afl++, radamsa, clang, git, and standard Linux tools.
-Your objective is to find vulnerabilities. You must think step-by-step.
-
-PLAYBOOK:
-1. If target is a SOURCE CODE (e.g., GitHub link): 
-   -> git clone <url> 
-   -> semgrep --config auto <dir>
-   -> Look for memory bugs, write a harness, compile with clang -fsanitize=fuzzer,address, and run it.
-2. If target is a WEB URL: 
-   -> nuclei -u <url>
-   -> ffuf -u <url>/FUZZ -w /usr/share/wordlists/dirb/common.txt
-   -> Check for SQLi with sqlmap.
-3. If target is an IP (Ngrok/Pinggy): -> nmap -sV <ip>
-4. If you find a crash (ASan output) or a vulnerability, analyze it and explain it.
-
-Reply with exactly ONE JSON object:
-{"action": "run_command", "command": "bash_command_here"}
-OR if you are done: {"action": "finish", "report": "Detailed report of findings."}
+# توجيهات صارمة جداً للنموذج لمنع الأخطاء السابقة
+system_prompt = """You are ZeroHunter, a strict cybersecurity AI.
+Rules:
+1. If the target is a website (starts with http), NEVER use 'git clone'. Use 'nuclei', 'ffuf', or 'nmap'. For nmap, remove 'http://' and 'https://'.
+2. If the target is a GitHub repository, use 'git clone' then 'semgrep' or 'clang'.
+3. Reply with exactly ONE JSON object: {"action": "run_command", "command": "bash_command"}
+OR if done: {"action": "finish", "report": "Report details"}
 Do NOT output markdown. ONLY valid JSON."""
 
 messages = [{"role": "system", "content": system_prompt}]
-context = f"Target objective: {ISSUE_BODY}\nHistory:\n"
+context = f"Target: {ISSUE_BODY}\nHistory:\n"
 
-max_steps = 5 # 10 حلقات تفكير عميقة
+max_steps = 3 # 3 خطوات كحد أقصى لتسريع الرد
 for step in range(max_steps):
     messages.append({"role": "user", "content": context + "\nWhat is your next step?"})
     
     try:
         payload = {"model": "qwen2.5-coder:1.5b", "messages": messages, "stream": False, "format": "json"}
-        resp = requests.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=300).json()
+        resp = requests.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=600).json()
         ai_resp = json.loads(resp['message']['content'])
     except Exception as e:
-        post_comment(f"❌ فشل النموذج: {e}")
+        post_comment(f"❌ فشل الاتصال بالنموذج. (قد يكون النموذج يستهلك ذاكرة كبيرة). الخطأ: {e}")
         break
 
     if ai_resp.get("action") == "finish":
-        post_comment(f"🏁 **التقرير النهائي للثغرات:**\n\n{ai_resp.get('report')}")
+        post_comment(f"🏁 **التقرير النهائي:**\n\n{ai_resp.get('report')}")
         break
         
     cmd = ai_resp.get("command", "")
+    
+    # تصحيح تلقائي لأخطاء النموذج الشائعة
+    if "nmap" in cmd:
+        cmd = cmd.replace("https://", "").replace("http://", "").replace("nmap -sV", "nmap -sV -Pn")
+        
     post_comment(f"⚙️ **الخطوة {step+1}:**\n```bash\n{cmd}\n```\n⏳ *جاري التنفيذ...*")
     
     try:
-        # استخدام مهلة 10 دقائق للسماح للفاحص بالعمل
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
         out = result.stdout + result.stderr
-        if len(out) > 4000: out = out[:4000] + "\n...[مختصر]"
+        if len(out) > 2000: out = out[:2000] + "\n...[مختصر]"
     except subprocess.TimeoutExpired:
-        out = "[انتهى الوقت - الأمر استغرق أكثر من 10 دقائق]"
+        out = "[انتهى الوقت - الأمر استغرق أكثر من 5 دقائق]"
     except Exception as e:
         out = str(e)
         
