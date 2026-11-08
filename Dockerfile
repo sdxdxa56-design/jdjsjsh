@@ -1,8 +1,11 @@
-# المرحلة 1: بناء أدوات Go باستخدام صورة حديثة (Go 1.26)
+# المرحلة 1: بناء أدوات Go باستخدام صورة حديثة
 FROM golang:1.26-bookworm AS go-builder
 ENV GOMAXPROCS=1
+ENV GOPROXY=https://proxy.golang.org,direct
+ENV GIT_TERMINAL_PROMPT=0
+
 RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/projectdiscovery/ffuf@latest
+    go install -v github.com/ffuf/ffuf/v2@latest
 
 # المرحلة 2: الصورة النهائية
 FROM ubuntu:22.04
