@@ -13,8 +13,9 @@ def post_comment(msg):
 
 post_comment(f"🤖 **ZeroHunter (النموذج المخصص):** استلمت الهدف `{ISSUE_BODY}`. جاري التحليل...")
 
-API_URL = "https://api-inference.huggingface.co/models/sdxdxa56/zerohunter-qwen-7b"
-headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+# ✅ نقطة النهاية الجديدة من Hugging Face
+API_URL = "https://router.huggingface.co/v1/chat/completions"
+headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
 
 prompt = f"""You are ZeroHunter, an elite cybersecurity AI.
 Analyze this target and provide a bash command to test it, or a report if a vulnerability is found.
@@ -22,14 +23,21 @@ Target: {ISSUE_BODY}
 Reply ONLY with valid JSON: {{"action": "run_command", "command": "bash_command"}} OR {{"action": "finish", "report": "report details"}}."""
 
 try:
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 250, "return_full_text": False}}
+    # ✅ تنسيق الطلب الجديد (OpenAI-compatible)
+    payload = {
+        "model": "sdxdxa56/zerohunter-qwen-7b",
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 250,
+        "stream": False
+    }
     response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
     
     if response.status_code != 200:
-        post_comment(f"❌ فشل الاتصال بالنموذج على Hugging Face. الكود: {response.status_code}\nالرد: {response.text}")
+        post_comment(f"❌ فشل الاتصال بالنموذج. الكود: {response.status_code}\nالرد: {response.text}")
         exit(1)
         
-    ai_reply = response.json()[0]['generated_text']
+    result = response.json()
+    ai_reply = result['choices'][0]['message']['content']
     
     # استخراج الـ JSON فقط في حال أضاف النموذج نصوصاً أخرى
     json_match = re.search(r'\{.*\}', ai_reply, re.DOTALL)
@@ -43,8 +51,8 @@ try:
     else:
         cmd = ai_resp.get("command")
         post_comment(f"⚙️ **الأمر:**\n```bash\n{cmd}\n```\n⏳ *جاري التنفيذ...*")
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
-        out = result.stdout + result.stderr
+        result_cmd = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+        out = result_cmd.stdout + result_cmd.stderr
         if len(out) > 1500: out = out[:1500] + "\n...[مختصر]"
         post_comment(f"📊 **النتيجة:**\n```\n{out}\n```")
 
