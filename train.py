@@ -28,6 +28,7 @@ model = FastLanguageModel.get_peft_model(
     random_state = 3407,
 )
 
+# بيانات التدريب (نمط الخلل)
 data = [
     {"conversations": [
         {"role": "user", "content": "Analyze this C code for vulnerabilities:\n\nvoid copy_data(char *input) {\n    char buffer[10];\n    strcpy(buffer, input);\n}"},
@@ -71,6 +72,11 @@ trainer = SFTTrainer(
 
 print("2. بدأ التدريب...")
 trainer.train()
-model.save_pretrained("zerohunter_model")
-tokenizer.save_pretrained("zerohunter_model")
-print("3. تم التدريب والحفظ بنجاح! النموذج جاهز.")
+
+# الحفظ في Google Drive لضمان عدم ضياع النموذج
+save_path = "/content/drive/MyDrive/zerohunter_model"
+print(f"3. جاري حفظ النموذج في: {save_path}")
+model.save_pretrained(save_path)
+tokenizer.save_pretrained(save_path)
+
+print("4. تم التدريب والحفظ بنجاح في Google Drive! النموذج جاهز.")
