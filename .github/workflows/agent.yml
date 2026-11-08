@@ -2,10 +2,12 @@ name: ZeroHunter Fast Agent
 on:
   issues:
     types: [opened]
+
 permissions:
   issues: write
   contents: read
   packages: read
+
 jobs:
   run-agent:
     runs-on: ubuntu-latest
@@ -15,24 +17,9 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
-
-      # إصلاح مشكلة الكاش بإنشاء المجلد أولاً
-      - name: Create Ollama Dir
-        run: mkdir -p /root/.ollama
-
-      - name: Cache Ollama Models
-        uses: actions/cache@v3
-        with:
-          path: /root/.ollama
-          key: ollama-qwen-1.5b-fast
-
-      - name: Start Ollama and Pull Model
-        run: |
-          ollama serve &
-          sleep 5
-          ollama pull qwen2.5-coder:1.5b
 
       - name: Run Agent
         env:
@@ -40,4 +27,5 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           REPO: ${{ github.repository }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}  # <--- تم إضافة المفتاح هنا
         run: python3 agent.py
