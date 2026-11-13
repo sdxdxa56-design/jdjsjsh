@@ -16,10 +16,22 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Remove unnecessary tools to free up space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
 
       - name: Run Agent
         env:
@@ -27,5 +39,5 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           REPO: ${{ github.repository }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}  # <--- تم إضافة المفتاح هنا
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python3 agent.py
