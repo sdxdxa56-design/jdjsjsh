@@ -12,17 +12,30 @@ TARGET_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-ggu
 api = HfApi(token=HF_TOKEN)
 api.create_repo(repo_id=TARGET_REPO, exist_ok=True)
 
-gguf_files = list(GGUF_DIR.glob("*.gguf"))
-if not gguf_files:
-    raise SystemExit(f"No .gguf file found inside {GGUF_DIR}")
+candidates = []
+for search_root in (GGUF_DIR, Path(f"{GGUF_DIR}_gguf"), Path(".")):
+    if search_root.exists():
+        candidates.extend(search_root.rglob("*.gguf"))
 
-for fpath in gguf_files:
-    print(f"Uploading {fpath.name} -> {TARGET_REPO}/zerohunter-3b-q4_k_m.gguf...")
-    api.upload_file(
-        path_or_fileobj=str(fpath),
-        path_in_repo="zerohunter-3b-q4_k_m.gguf",
-        repo_id=TARGET_REPO,
-        repo_type="model",
-    )
+# Deduplicate while preferring inside GGUF_DIR
+seen = set()
+gguf_files = []
+for p in candidates:
+    rp = p.resolve()
+    if rp not in seen and "checkpoint" not in str(rp):
+        seen.add(rp)
+        gguf_files.append(p)
+
+if not gguf_files:
+    raise SystemExit(f"No .gguf file found inside {GGUF_DIR} or current directory")
+
+chosen = sorted(gguf_files, key=lambda p: p.stat().st_size, reverse=True)[0]
+print(f"Uploading {chosen} -> {TARGET_REPO}/zerohunter-3b-q4_k_m.gguf...")
+api.upload_file(
+    path_or_fileobj=str(chosen),
+    path_in_repo="zerohunter-3b-q4_k_m.gguf",
+    repo_id=TARGET_REPO,
+    repo_type="model",
+)
 
 print(f"Uploaded successfully: https://huggingface.co/{TARGET_REPO}")

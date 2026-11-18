@@ -72,12 +72,11 @@ def upload_files():
     })
 
 
-@app.route("/api/unpack/<session_id>", methods=["POST"])
-def unpack_session(session_id: str):
+def perform_unpack(session_id: str) -> tuple[dict, int]:
     safe_sid = re.sub(r"[^A-Za-z0-9_-]", "", session_id)
     session_dir = UPLOAD_BASE / safe_sid
     if not session_dir.exists():
-        return jsonify({"error": "الجلسة غير موجودة"}), 404
+        return {"ok": False, "error": "الجلسة غير موجودة"}, 404
 
     extracted = []
     extract_dir = session_dir / "extracted"
@@ -85,13 +84,19 @@ def unpack_session(session_id: str):
         extracted.extend(safe_extract_zip(zp, extract_dir))
 
     findings = run_static_scan(extract_dir if extract_dir.exists() else session_dir)
-    return jsonify({
+    return {
         "ok": True,
         "extracted_count": len(extracted),
         "extracted": extracted[:100],
         "findings": findings[:15],
         "workspace_path": str(extract_dir if extract_dir.exists() else session_dir),
-    })
+    }, 200
+
+
+@app.route("/api/unpack/<session_id>", methods=["POST"])
+def unpack_session(session_id: str):
+    data, code = perform_unpack(session_id)
+    return jsonify(data), code
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -104,16 +109,19 @@ def chat():
 
     # Handle local "فككه" command directly if an archive was uploaded
     if session_id and any(k in user_msg.lower() for k in ("فكك", "فك", "استخرج", "unzip", "extract")):
-        resp_data = unpack_session(session_id).get_json()
-        if resp_data and resp_data.get("ok"):
-            files_preview = "\n".join(f"- {p}" for p in resp_data.get("extracted", [])[:25])
-            findings_count = len(resp_data.get("findings", []))
-            return jsonify({
-                "direct_reply": (
-                    f"📦 تم تفكيك الأرشيف ({resp_data['extracted_count']} ملفاً) في المسار {resp_data['workspace_path']}:\n"
-                    f"{files_preview}\n\n🔎 المسح الأولي رصد {findings_count} نقطة للمراجعة. كيف تحب أن نبدأ التفاهم حولها؟"
-                )
-            })
+        resp_data, code = perform_unpack(session_id)
+        if code != 200 or not resp_data.get("ok"):
+            return jsonify({"error": resp_data.get("error", "تعذر فك الأرشيف")}), code
+        files_preview = "\n".join(f"- {p}" for p in resp_data.get("extracted", [])[:25])
+        findings_list = resp_data.get("findings", [])
+        findings_preview = "\n".join(f"- {f['file']}:{f['line']}: {f['message']}" for f in findings_list[:6])
+        extra = f"\n\n🔎 المسح الأولي رصد {len(findings_list)} نقطة:\n{findings_preview}" if findings_list else ""
+        return jsonify({
+            "direct_reply": (
+                f"📦 تم تفكيك الأرشيف ({resp_data['extracted_count']} ملفاً) في المسار {resp_data['workspace_path']}:\n"
+                f"{files_preview}{extra}\n\n💬 كيف تحب أن نبدأ التفاهم حول هذه الملفات؟"
+            )
+        })
 
     # If a local GGUF model is loaded, answer directly offline without needing GitHub
     llm = get_local_llm()
@@ -122,8 +130,19 @@ def chat():
         if session_id:
             sdir = UPLOAD_BASE / re.sub(r"[^A-Za-z0-9_-]", "", session_id)
             if sdir.exists():
-                files = [str(p.relative_to(sdir)) for p in sdir.rglob("*") if p.is_file()][:40]
-                ws_note = "\nالملفات الموجودة في مساحة العمل:\n" + "\n".join(files)
+                all_files = [p for p in sdir.rglob("*") if p.is_file() and p.suffix.lower() != ".zip"]
+                rel_names = [str(p.relative_to(sdir)) for p in all_files][:40]
+                ws_note = "\nالملفات الموجودة في مساحة العمل:\n" + "\n".join(rel_names)
+                if any(k in user_msg.lower() for k in ("افحص", "فحص", "ثغرات", "اشرح", "audit", "scan")):
+                    local_findings = run_static_scan(sdir)[:8]
+                    if local_findings:
+                        ws_note += "\n\nنتائج الفحص الثابت:\n" + json.dumps(local_findings, ensure_ascii=False)
+                for p in all_files[:3]:
+                    if p.name.lower() in user_msg.lower() or len(all_files) <= 2:
+                        try:
+                            ws_note += f"\n\nمقتطف من {p.name}:\n" + p.read_text(encoding="utf-8", errors="ignore")[:1800]
+                        except OSError:
+                            pass
         prompt = (
             "<|im_start|>system\nأنت ZeroHunter، مساعد أمني ذكي تتحدث العربية بطبيعية وتفحص الكود والملفات المرفوعة وتقترح خططاً وأفكاراً.<|im_end|>\n"
             f"<|im_start|>user\n{user_msg}{ws_note}<|im_end|>\n<|im_start|>assistant\n"
