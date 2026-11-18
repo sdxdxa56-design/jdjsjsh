@@ -116,8 +116,8 @@ prompt = st.chat_input("ارفع .zip ثم اكتب 'فككه'، أو تحدث �
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Local unpack command ("فككه") before talking/auditing
-    if any(k in prompt.lower() for k in ("فكك", "فك", "استخرج", "unzip", "extract")) and st.session_state.pending_zips:
+    # Local unpack command ("فككه") before talking/auditing (avoid matching substrings like "كيفك")
+    if re.search(r"(?:^|[\s،,.:;!?؟«»'()-])(?:فككه|فكك|فك\s+الأرشيف|فك\s+الملف|استخرجه|استخرج|unzip|extract)(?:$|[\s،,.:;!?؟«»'()-])", prompt.lower()) and st.session_state.pending_zips:
         extracted_all = []
         for zpath in st.session_state.pending_zips:
             zp = Path(zpath)

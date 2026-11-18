@@ -107,8 +107,8 @@ def chat():
     if not user_msg:
         return jsonify({"error": "الرسالة فارغة"}), 400
 
-    # Handle local "فككه" command directly if an archive was uploaded
-    if session_id and any(k in user_msg.lower() for k in ("فكك", "فك", "استخرج", "unzip", "extract")):
+    # Handle local "فككه" command directly if an archive was uploaded (avoid matching substrings like "كيفك")
+    if session_id and re.search(r"(?:^|[\s،,.:;!?؟«»'()-])(?:فككه|فكك|فك\s+الأرشيف|فك\s+الملف|استخرجه|استخرج|unzip|extract)(?:$|[\s،,.:;!?؟«»'()-])", user_msg.lower()):
         resp_data, code = perform_unpack(session_id)
         if code != 200 or not resp_data.get("ok"):
             return jsonify({"error": resp_data.get("error", "تعذر فك الأرشيف")}), code
