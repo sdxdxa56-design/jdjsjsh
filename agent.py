@@ -1,85 +1,180 @@
-import os, subprocess, sys, json, re, requests
-from huggingface_hub import snapshot_download
-
-# 1. تثبيت مكتبات النموذج
-try:
-    import llama_cpp
-except ImportError:
-    print("جاري تثبيت llama-cpp-python...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "llama-cpp-python", "huggingface_hub"])
-
+import os
+import re
+import json
+import time
+import requests
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
-from huggingface_hub import snapshot_download
 
-GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
-ISSUE_NUM = os.environ["ISSUE_NUMBER"]
-ISSUE_BODY = os.environ.get("ISSUE_BODY", "No instructions")
-REPO = os.environ["REPO"]
+from core.scanner import clone_or_prepare_workspace, run_static_scan, extract_target_context
+from modules.binary_fuzz import run_libfuzzer_on_target
+from triage.analyzer import summarize_crash_for_llm, save_markdown_report
 
-def post_comment(msg):
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+HF_TOKEN = os.environ.get("HF_TOKEN") or None
+ISSUE_NUM = os.environ.get("ISSUE_NUMBER", "0")
+ISSUE_BODY = os.environ.get("ISSUE_BODY", "Audit local targets/demo.c")
+REPO = os.environ.get("REPO", "sdxdxa56-design/jdjsjsh")
+HF_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-gguf")
+GGUF_FILE = os.environ.get("ZEROHUNTER_GGUF_FILE", "zerohunter-3b-q4_k_m.gguf")
+FUZZ_TIMEOUT = int(os.environ.get("FUZZ_TIMEOUT", "90"))
+
+HEADERS = {
+    "Authorization": f"token {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3+json",
+}
+
+SEEN_USER_COMMENTS = set()
+
+
+def post_comment(body: str) -> None:
+    print(body)
+    if not GITHUB_TOKEN or ISSUE_NUM == "0":
+        return
     url = f"https://api.github.com/repos/{REPO}/issues/{ISSUE_NUM}/comments"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    requests.post(url, headers=headers, json={"body": msg})
+    requests.post(url, headers=HEADERS, json={"body": body}, timeout=20)
 
-post_comment(f"🤖 **ZeroHunter (نموذجك الخاص 100%):** استلمت الهدف `{ISSUE_BODY}`. جاري تحميل النموذج وتطبيق LoRA...")
 
-# 2. تحميل نموذجك (LoRA) من Hugging Face
-post_comment("⏳ جاري تحميل نموذجك المدرب (LoRA)...")
-lora_dir = "./my_lora"
-snapshot_download(repo_id="sdxdxa56/zerohunter-qwen-7b", local_dir=lora_dir)
+def post_status(phase: str, progress: int, eta_sec: int, msg_ar: str) -> None:
+    payload = json.dumps({
+        "phase": phase,
+        "progress": progress,
+        "eta_seconds": eta_sec,
+        "message": msg_ar,
+    }, ensure_ascii=False)
+    post_comment(f"⏳ **[{progress}% | {phase}]** {msg_ar}\n<!-- ZEROHUNTER_STATUS:{payload} -->")
 
-# 3. تحميل النموذج الأساسي بصيغة GGUF (خفيف جداً)
-post_comment("⏳ جاري تحميل النموذج الأساسي (GGUF)...")
-model_path = snapshot_download(
-    repo_id="Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
-    allow_patterns="*q4_k_m.gguf" # تحميل النسخة المكممة لتوفير الذاكرة
-)
 
-# 4. تشغيل النموذج ودمج LoRA
-post_comment("⚙️ جاري تشغيل النموذج ودمج الأوزان...")
-llm = Llama(
-    model_path=model_path,
-    lora_path=lora_dir, # هنا يتم تطبيق نموذجك الخاص
-    n_ctx=2048,
-    n_threads=4,
-    verbose=False
-)
+def poll_user_commands(llm: Optional[Llama], current_state: Dict[str, Any]) -> List[str]:
+    """Reads live [USER_CMD] comments from the owner mid-run and answers status queries immediately."""
+    if not GITHUB_TOKEN or ISSUE_NUM == "0":
+        return []
+    url = f"https://api.github.com/repos/{REPO}/issues/{ISSUE_NUM}/comments?per_page=100"
+    resp = requests.get(url, headers=HEADERS, timeout=20)
+    if resp.status_code != 200:
+        return []
+    new_directives: List[str] = []
+    for c in resp.json():
+        cid = c.get("id")
+        body = c.get("body", "")
+        if cid in SEEN_USER_COMMENTS:
+            continue
+        if "[USER_CMD]" in body:
+            SEEN_USER_COMMENTS.add(cid)
+            user_text = body.replace("[USER_CMD]", "").strip()
+            if any(k in user_text for k in ("وصلت", "باقي", "حالة", "progress", "eta", "status")):
+                post_comment(
+                    f"📡 **رد حي على سؤالك:** أنا حالياً في **{current_state['phase']}** "
+                    f"(التقدم: **{current_state['progress']}%**، الوقت المتبقي التقريبي: **{current_state['eta']} ثانية**). "
+                    f"الخطوة الجارية: {current_state['detail']}"
+                )
+            else:
+                new_directives.append(user_text)
+                post_comment(f"🧭 استلمت توجيهك وسأدمجه في الخطوة الحالية: `{user_text}`")
+    return new_directives
 
-# 5. التوجيه للنموذج
-prompt = f"""You are ZeroHunter, an elite cybersecurity AI.
-Analyze this target and provide a bash command to test it, or a report if a vulnerability is found.
-Target: {ISSUE_BODY}
-Reply ONLY with valid JSON: {{"action": "run_command", "command": "bash_command"}} OR {{"action": "finish", "report": "report details"}}."""
 
-post_comment("🧠 النموذج يفكر الآن (قد يستغرق دقيقة لأن المعالج CPU)...")
-output = llm(
-    prompt,
-    max_tokens=250,
-    stop=["User:", "System:"],
-    echo=False
-)
+def chatml_query(llm: Llama, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+    prompt = (
+        f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+        f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
+    )
+    out = llm(prompt, max_tokens=max_tokens, stop=["<|im_end|>"], echo=False, temperature=0.1)
+    return out["choices"][0]["text"].strip()
 
-ai_reply = output['choices'][0]['text'].strip()
 
-try:
-    # استخراج الـ JSON
-    json_match = re.search(r'\{.*\}', ai_reply, re.DOTALL)
-    if json_match:
-        ai_reply = json_match.group(0)
-        
-    ai_resp = json.loads(ai_reply)
+def load_model() -> Llama:
+    model_file = hf_hub_download(
+        repo_id=HF_REPO,
+        filename=GGUF_FILE,
+        token=HF_TOKEN,
+    )
+    return Llama(model_path=model_file, n_ctx=4096, n_threads=4, verbose=False)
 
-    if ai_resp.get("action") == "finish":
-        post_comment(f"🚨 **تقرير النموذج الخاص بك:**\n\n{ai_resp.get('report')}")
+
+def main() -> None:
+    start_time = time.time()
+    state = {"phase": "1/4 التهيئة", "progress": 5, "eta": 180, "detail": "تحميل النموذج وتجهيز بيئة الفحص"}
+    post_status(state["phase"], state["progress"], state["eta"], state["detail"])
+
+    try:
+        llm = load_model()
+    except Exception as exc:
+        post_comment(f"❌ خطأ في تحميل النموذج من Hugging Face ({HF_REPO}/{GGUF_FILE}): {exc}")
+        return
+
+    # Phase 1: Target Preparation & SAST
+    state = {"phase": "2/4 الاستكشاف الثابت", "progress": 25, "eta": 140, "detail": "فحص الكود بـ cppcheck وsemgrep"}
+    post_status(state["phase"], state["progress"], state["eta"], state["detail"])
+    target_dir = clone_or_prepare_workspace(ISSUE_BODY, Path("workspace"))
+    findings = run_static_scan(target_dir)
+    directives = poll_user_commands(llm, state)
+
+    report_sections: List[str] = []
+    report_sections.append(f"**الهدف:** `{ISSUE_BODY}`\n**نتائج التحليل الثابت (SAST):** تم رصد {len(findings)} نقطة مشبوهة.")
+
+    # Phase 2 & 3: Prioritize C/C++ files for LibFuzzer + ASan verification
+    c_findings = [f for f in findings if f["file"].endswith((".c", ".cpp"))]
+    if c_findings:
+        top = c_findings[0]
+        state = {"phase": "3/4 توليد الفازر والتجربة", "progress": 55, "eta": FUZZ_TIMEOUT + 30, "detail": f"توليد Harness لـ {top['file']}"}
+        post_status(state["phase"], state["progress"], state["eta"], state["detail"])
+
+        snippet = extract_target_context(top["file"], top["line"])
+        directive_note = f"\nUser steering note: {'; '.join(directives)}" if directives else ""
+        harness_prompt = (
+            "Write ONLY valid C code implementing int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) "
+            "to fuzz the target function shown below. Include <stdint.h> and <stddef.h>.\n"
+            f"Target file: {top['file']}\n{snippet}{directive_note}"
+        )
+        raw_harness = chatml_query(llm, "You are ZeroHunter, a C/C++ fuzzing harness specialist.", harness_prompt, max_tokens=380)
+        code_match = re.search(r"```(?:c|cpp)?\n(.*?)```", raw_harness, re.DOTALL)
+        harness_code = code_match.group(1) if code_match else raw_harness
+
+        fuzz_res = run_libfuzzer_on_target(top["file"], harness_code, timeout_sec=FUZZ_TIMEOUT)
+        poll_user_commands(llm, state)
+
+        if fuzz_res["crashed"]:
+            state = {"phase": "4/4 فرز الانهيار", "progress": 85, "eta": 20, "detail": "تحليل أثر ASan وصياغة التصحيح"}
+            post_status(state["phase"], state["progress"], state["eta"], state["detail"])
+            triage_input = summarize_crash_for_llm(fuzz_res["asan_log"], snippet)
+            analysis = chatml_query(
+                llm,
+                "You are ZeroHunter. Explain the root cause of this confirmed ASan crash in Arabic and provide a safe C patch.",
+                triage_input,
+                max_tokens=500,
+            )
+            report_sections.append(
+                f"### 🚨 ثغرة مؤكدة (Confirmed ASan Crash)\n"
+                f"- **الملف:** `{top['file']}` (السطر {top['line']})\n"
+                f"- **ملف الإثبات (PoC):** `{fuzz_res['crash_file']}`\n\n"
+                f"{analysis}"
+            )
+        else:
+            report_sections.append(f"تم تشغيل LibFuzzer على `{top['file']}` لمدة {FUZZ_TIMEOUT} ثانية دون انهيار حرج.")
+    elif findings:
+        state = {"phase": "4/4 التحليل النهائي", "progress": 80, "eta": 25, "detail": "مراجعة نتائج SAST للنقاط المكتشفة"}
+        post_status(state["phase"], state["progress"], state["eta"], state["detail"])
+        summary_text = json.dumps(findings[:8], ensure_ascii=False, indent=2)
+        analysis = chatml_query(
+            llm,
+            "You are ZeroHunter. Analyze these static findings in Arabic, filter false positives, and suggest fixes.",
+            summary_text,
+            max_tokens=500,
+        )
+        report_sections.append(analysis)
     else:
-        cmd = ai_resp.get("command")
-        post_comment(f"⚙️ **الأمر المستخرج:**\n```bash\n{cmd}\n```\n⏳ *جاري التنفيذ...*")
-        result_cmd = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
-        out = result_cmd.stdout + result_cmd.stderr
-        if len(out) > 1500: out = out[:1500] + "\n...[مختصر]"
-        post_comment(f"📊 **النتيجة:**\n```\n{out}\n```")
+        report_sections.append("لم يتم العثور على أنماط خطرة واضحة في المسار المحدد.")
 
-except json.JSONDecodeError:
-    post_comment(f"❌ النموذج أرجع رداً غير صالح (ليس JSON):\n```\n{ai_reply}\n```")
-except Exception as e:
-    post_comment(f"❌ خطأ في التنفيذ: {e}")
+    elapsed = int(time.time() - start_time)
+    save_markdown_report("ZeroHunter Security Audit Report", report_sections)
+    final_body = "\n\n".join(report_sections)
+    post_comment(f"🏁 **التقرير النهائي** (استغرق {elapsed} ثانية)\n\n{final_body}")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,23 +1,28 @@
-%%writefile upload_final.py
-from huggingface_hub import HfApi, login
+import os
+from pathlib import Path
+from huggingface_hub import HfApi
 
-HF_TOKEN = "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"
+HF_TOKEN = os.environ.get("HF_TOKEN")
+if not HF_TOKEN:
+    raise SystemExit("ERROR: Set HF_TOKEN environment variable before running upload_hf.py")
 
-print("1. جاري تسجيل الدخول...")
-login(token=HF_TOKEN)
+GGUF_DIR = Path(os.environ.get("ZEROHUNTER_OUT_DIR", "./zerohunter_gguf"))
+TARGET_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-gguf")
 
-api = HfApi()
-username = api.whoami()["name"]
-repo_id = f"{username}/zerohunter-qwen-7b"
+api = HfApi(token=HF_TOKEN)
+api.create_repo(repo_id=TARGET_REPO, exist_ok=True)
 
-print(f"2. جاري إنشاء مستودع باسم: {repo_id}")
-api.create_repo(repo_id=repo_id, exist_ok=True)
+gguf_files = list(GGUF_DIR.glob("*.gguf"))
+if not gguf_files:
+    raise SystemExit(f"No .gguf file found inside {GGUF_DIR}")
 
-print("3. جاري رفع النموذج من Google Drive (قد يأخذ دقيقة)...")
-api.upload_folder(
-    folder_path="/content/drive/MyDrive/zerohunter_model",
-    repo_id=repo_id,
-    repo_type="model"
-)
-print("✅ 4. تم رفع النموذج بنجاح!")
-print(f"🔗 رابط النموذج: https://huggingface.co/{repo_id}")
+for fpath in gguf_files:
+    print(f"Uploading {fpath.name} -> {TARGET_REPO}/zerohunter-3b-q4_k_m.gguf...")
+    api.upload_file(
+        path_or_fileobj=str(fpath),
+        path_in_repo="zerohunter-3b-q4_k_m.gguf",
+        repo_id=TARGET_REPO,
+        repo_type="model",
+    )
+
+print(f"Uploaded successfully: https://huggingface.co/{TARGET_REPO}")

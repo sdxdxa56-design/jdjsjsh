@@ -1,6 +1,11 @@
+.env
+.streamlit/secrets.toml
 crashes/
 corpus/
 reports/
+outputs/
+models/
 __pycache__/
 *.pyc
+*.gguf
 fuzz_*

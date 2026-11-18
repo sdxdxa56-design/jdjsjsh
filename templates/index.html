@@ -1,89 +1,94 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZeroHunter Chat</title>
-    <style>
-        body { font-family: sans-serif; background: #1e1e24; color: #fff; margin: 0; padding: 20px; }
-        #chat-box { height: 70vh; overflow-y: auto; border: 1px solid #333; border-radius: 10px; padding: 15px; background: #2a2a35; margin-bottom: 10px; }
-        .msg { margin-bottom: 10px; padding: 10px; border-radius: 8px; max-width: 80%; word-wrap: break-word; white-space: pre-wrap; }
-        .user { background: #007bff; align-self: flex-end; margin-left: auto; }
-        .bot { background: #444; align-self: flex-start; margin-right: auto; }
-        .input-area { display: flex; gap: 10px; }
-        input { flex: 1; padding: 12px; border-radius: 8px; border: none; background: #333; color: #fff; }
-        button { padding: 12px 20px; border: none; border-radius: 8px; background: #28a745; color: #fff; font-weight: bold; cursor: pointer; }
-        button:disabled { background: #555; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZeroHunter Interactive</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    .bar { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; font-size: 14px; }
+    #chat-box { height: 62vh; overflow-y: auto; border: 1px solid #334155; border-radius: 8px; padding: 16px; background: #1e293b; margin-bottom: 12px; }
+    .msg { margin-bottom: 12px; padding: 12px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; }
+    .user { background: #1d4ed8; margin-right: 15%; }
+    .bot { background: #0f172a; border: 1px solid #334155; margin-left: 15%; }
+    .input-area { display: flex; gap: 10px; }
+    input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #fff; }
+    button { padding: 12px 20px; border: none; border-radius: 8px; background: #16a34a; color: #fff; font-weight: 600; cursor: pointer; }
+  </style>
 </head>
 <body>
-    <h2>🛡️ ZeroHunter AI</h2>
+  <div class="wrap">
+    <h2>ZeroHunter — الوكيل الأمني التفاعلي</h2>
+    <div class="bar">
+      <span id="phase-text">الحالة: جاهز</span>
+      <span id="eta-text">التقدم: 0%</span>
+    </div>
     <div id="chat-box">
-        <div class="msg bot">مرحباً! اكتب طلبك الأمني (مثلاً: "Write a C buffer overflow and run it"). سأقوم بتنفيذه في سيرفرات GitHub وأعيد لك النتيجة.</div>
+      <div class="msg bot">أرسل رابط مستودع أو هدف فحص، ويمكنك سؤالي أثناء التشغيل (مثلاً: أين وصلت وكم باقي لك؟).</div>
     </div>
     <div class="input-area">
-        <input type="text" id="msg-input" placeholder="اكتب طلبك هنا..." onkeypress="if(event.key==='Enter') sendMsg()">
-        <button id="send-btn" onclick="sendMsg()">إرسال</button>
+      <input type="text" id="msg-input" placeholder="اكتب هدفك أو سؤالك للوكيل..." onkeypress="if(event.key==='Enter') sendMsg()">
+      <button onclick="sendMsg()">إرسال</button>
     </div>
+  </div>
+  <script>
+    let activeIssueId = null;
+    let liveBotMsg = null;
+    let pollTimer = null;
 
-    <script>
-        const chatBox = document.getElementById('chat-box');
-        const input = document.getElementById('msg-input');
-        const btn = document.getElementById('send-btn');
+    function addMsg(text, cls) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + cls;
+      div.innerText = text;
+      const box = document.getElementById('chat-box');
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+      return div;
+    }
 
-        function addMsg(text, cls) {
-            const div = document.createElement('div');
-            div.className = `msg ${cls}`;
-            div.innerText = text;
-            chatBox.appendChild(div);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return div;
-        }
+    async function sendMsg() {
+      const input = document.getElementById('msg-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      addMsg(text, 'user');
 
-        async function sendMsg() {
-            const text = input.value.trim();
-            if (!text) return;
-            input.value = '';
-            btn.disabled = true;
-            addMsg(text, 'user');
-            const botMsg = addMsg('⏳ جاري إنشاء الطلب في GitHub...', 'bot');
+      if (activeIssueId) {
+        await fetch('/api/reply/' + activeIssueId, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({message: text})
+        });
+        return;
+      }
 
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: text})
-                });
-                const data = await res.json();
-                if (data.error) throw new Error(data.error);
-                pollStatus(data.issue_id, botMsg);
-            } catch (e) {
-                botMsg.innerText = '❌ خطأ: ' + e.message;
-                btn.disabled = false;
-            }
-        }
+      liveBotMsg = addMsg('⏳ جاري بدء المهمة في GitHub Actions...', 'bot');
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text})
+      });
+      const data = await res.json();
+      if (data.error) { liveBotMsg.innerText = '❌ ' + data.error; return; }
+      activeIssueId = data.issue_id;
+      pollTimer = setInterval(checkStatus, 3500);
+    }
 
-        async function pollStatus(issueId, botMsg) {
-            let seconds = 0;
-            const interval = setInterval(async () => {
-                seconds += 3;
-                try {
-                    const res = await fetch(`/api/status/${issueId}`);
-                    const data = await res.json();
-                    botMsg.innerText = data.reply;
-                    if (data.status === 'done') {
-                        clearInterval(interval);
-                        btn.disabled = false;
-                    } else {
-                        botMsg.innerText += `\n(انتظر... ${seconds} ثانية)`;
-                    }
-                } catch (e) {
-                    botMsg.innerText = '❌ فشل الاتصال بالخادم';
-                    clearInterval(interval);
-                    btn.disabled = false;
-                }
-            }, 3000);
-        }
-    </script>
+    async function checkStatus() {
+      if (!activeIssueId) return;
+      const res = await fetch('/api/status/' + activeIssueId);
+      const data = await res.json();
+      if (liveBotMsg) liveBotMsg.innerText = data.reply;
+      if (data.progress) {
+        document.getElementById('phase-text').innerText = 'المرحلة: ' + (data.progress.phase || '');
+        document.getElementById('eta-text').innerText = 'التقدم: ' + (data.progress.progress || 0) + '% · المتبقي: ' + (data.progress.eta_seconds || 0) + 'ث';
+      }
+      if (data.status === 'done' || data.status === 'error') {
+        clearInterval(pollTimer);
+        activeIssueId = null;
+      }
+    }
+  </script>
 </body>
 </html>

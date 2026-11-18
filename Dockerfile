@@ -1,38 +1,23 @@
-# المرحلة 1: بناء أدوات Go باستخدام صورة حديثة
-FROM golang:1.26-bookworm AS go-builder
-ENV GOMAXPROCS=1
-ENV GOPROXY=https://proxy.golang.org,direct
-ENV GIT_TERMINAL_PROMPT=0
-
-RUN go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest && \
-    go install -v github.com/ffuf/ffuf/v2@latest
-
-# المرحلة 2: الصورة النهائية
 FROM ubuntu:22.04
+
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_NO_CACHE_DIR=1
 
-# 1. تحديث القوائم
-RUN apt-get update
-
-# 2. تثبيت الأدوات الأساسية (بدون مشاكل)
-RUN for i in 1 2 3; do \
-        apt-get install -y --no-install-recommends \
-        curl git jq python3 python3-pip python3-venv \
-        clang llvm nmap ca-certificates zstd && break || sleep 15; \
-    done \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake pkg-config \
+    clang llvm lld \
+    cppcheck \
+    curl git jq ca-certificates \
+    python3 python3-pip python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. ترقية pip أولاً (حل جذري للمشكلة)
-RUN python3 -m pip install --upgrade pip
-
-# 4. تثبيت أدوات Python (بدون الخيار المسبب للمشكلة)
-RUN python3 -m pip install semgrep requests
-
-# 5. نسخ أدوات Go الجاهزة
-COPY --from=go-builder /go/bin/nuclei /usr/local/bin/
-COPY --from=go-builder /go/bin/ffuf /usr/local/bin/
-
-# 6. تثبيت Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
+RUN python3 -m pip install --upgrade pip && \
+    python3 -m pip install \
+      requests \
+      huggingface_hub \
+      semgrep \
+      flawfinder \
+      bandit \
+      llama-cpp-python
 
 WORKDIR /app
