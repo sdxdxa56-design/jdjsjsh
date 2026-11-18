@@ -48,8 +48,18 @@ def post_status(phase: str, progress: int, eta_sec: int, msg_ar: str) -> None:
     post_comment(f"⏳ **[{progress}% | {phase}]** {msg_ar}\n<!-- ZEROHUNTER_STATUS:{payload} -->")
 
 
+def is_audit_request(text: str) -> bool:
+    """Detects whether the user wants code/repository auditing & fuzzing vs natural chat."""
+    if re.search(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", text):
+        return True
+    if re.search(r"\.(c|cpp|h|py|js|ts|go|php|conf)\b", text):
+        return True
+    audit_keywords = ("افحص", "فحص", "ثغرات", "فازر", "audit", "fuzz", "scan", "targets/")
+    return any(k in text.lower() for k in audit_keywords)
+
+
 def poll_user_commands(llm: Optional[Llama], current_state: Dict[str, Any]) -> List[str]:
-    """Reads live [USER_CMD] comments from the owner mid-run and answers status queries immediately."""
+    """Reads live [USER_CMD] comments mid-run and responds naturally via the model."""
     if not GITHUB_TOKEN or ISSUE_NUM == "0":
         return []
     url = f"https://api.github.com/repos/{REPO}/issues/{ISSUE_NUM}/comments?per_page=100"
@@ -65,15 +75,21 @@ def poll_user_commands(llm: Optional[Llama], current_state: Dict[str, Any]) -> L
         if "[USER_CMD]" in body:
             SEEN_USER_COMMENTS.add(cid)
             user_text = body.replace("[USER_CMD]", "").strip()
-            if any(k in user_text for k in ("وصلت", "باقي", "حالة", "progress", "eta", "status")):
-                post_comment(
-                    f"📡 **رد حي على سؤالك:** أنا حالياً في **{current_state['phase']}** "
-                    f"(التقدم: **{current_state['progress']}%**، الوقت المتبقي التقريبي: **{current_state['eta']} ثانية**). "
-                    f"الخطوة الجارية: {current_state['detail']}"
+            new_directives.append(user_text)
+            if llm is not None:
+                live_reply = chatml_query(
+                    llm,
+                    "أنت ZeroHunter، مساعد أمني ذكي تتحدث العربية بطبيعية. أجب المستخدم بناءً على حالة الفحص الحالية واقترح خطة مختصرة.",
+                    f"حالة الفحص الآن: المرحلة={current_state['phase']}, التقدم={current_state['progress']}%, "
+                    f"الوقت المتبقي={current_state['eta']}ث, التفاصيل={current_state['detail']}, "
+                    f"النتائج المكتشفة حتى الآن={current_state.get('findings_count', 0)}.\nسؤال/توجيه المستخدم: {user_text}",
+                    max_tokens=280,
                 )
+                post_comment(f"💬 **رد ZeroHunter المباشر:**\n{live_reply}")
             else:
-                new_directives.append(user_text)
-                post_comment(f"🧭 استلمت توجيهك وسأدمجه في الخطوة الحالية: `{user_text}`")
+                post_comment(
+                    f"📡 **رد حي:** المرحلة الحالية **{current_state['phase']}** ({current_state['progress']}%)، المتبقي ~{current_state['eta']}ث."
+                )
     return new_directives
 
 
@@ -83,7 +99,7 @@ def chatml_query(llm: Llama, system_prompt: str, user_prompt: str, max_tokens: i
         f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    out = llm(prompt, max_tokens=max_tokens, stop=["<|im_end|>"], echo=False, temperature=0.1)
+    out = llm(prompt, max_tokens=max_tokens, stop=["<|im_end|>"], echo=False, temperature=0.2)
     return out["choices"][0]["text"].strip()
 
 
@@ -98,7 +114,13 @@ def load_model() -> Llama:
 
 def main() -> None:
     start_time = time.time()
-    state = {"phase": "1/4 التهيئة", "progress": 5, "eta": 180, "detail": "تحميل النموذج وتجهيز بيئة الفحص"}
+    state: Dict[str, Any] = {
+        "phase": "1/4 التهيئة",
+        "progress": 5,
+        "eta": 180,
+        "detail": "تحميل النموذج وتجهيز الجلسة",
+        "findings_count": 0,
+    }
     post_status(state["phase"], state["progress"], state["eta"], state["detail"])
 
     try:
@@ -107,64 +129,100 @@ def main() -> None:
         post_comment(f"❌ خطأ في تحميل النموذج من Hugging Face ({HF_REPO}/{GGUF_FILE}): {exc}")
         return
 
-    # Phase 1: Target Preparation & SAST
-    state = {"phase": "2/4 الاستكشاف الثابت", "progress": 25, "eta": 140, "detail": "فحص الكود بـ cppcheck وsemgrep"}
+    # الوضع 1: محادثة طبيعية وأفكار وخطط بدون تشغيل فحص ملفات
+    if not is_audit_request(ISSUE_BODY):
+        post_status("محادثة مباشرة", 50, 15, "النموذج يكتب الرد الآن")
+        reply = chatml_query(
+            llm,
+            "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود واكتشاف الثغرات. تحدث بالعربية بطبيعية ووضوح، وقدم خططاً وأفكاراً هندسية عملية.",
+            ISSUE_BODY,
+            max_tokens=600,
+        )
+        post_comment(f"🏁 **التقرير النهائي**\n\n{reply}")
+        return
+
+    # الوضع 2: فحص الكود وعرض النتائج والخطط والأفكار أولاً بأول
+    state = {"phase": "2/4 الاستكشاف الثابت", "progress": 25, "eta": 140, "detail": "فحص الكود بـ cppcheck وsemgrep", "findings_count": 0}
     post_status(state["phase"], state["progress"], state["eta"], state["detail"])
     target_dir = clone_or_prepare_workspace(ISSUE_BODY, Path("workspace"))
     findings = run_static_scan(target_dir)
+    state["findings_count"] = len(findings)
     directives = poll_user_commands(llm, state)
 
-    report_sections: List[str] = []
-    report_sections.append(f"**الهدف:** `{ISSUE_BODY}`\n**نتائج التحليل الثابت (SAST):** تم رصد {len(findings)} نقطة مشبوهة.")
+    # عرض النتائج الفورية + خطط وأفكار من النموذج فور انتهاء الاستكشاف
+    preview_list = "\n".join(
+        f"- {f['file']}:{f['line']} ({f['tool']}) -> {f['message']}" for f in findings[:6]
+    ) or "لا توجد أنماط خطرة واضحة في المسح الأولي."
+    immediate_plan = chatml_query(
+        llm,
+        "أنت ZeroHunter. لخّص للمستخدم ما وجدته في هذه الخطوة فوراً بالعربية، واقترح خطة العمل والأفكار للخطوة القادمة في نقاط واضحة.",
+        f"نتائج الاستكشاف الثابت ({len(findings)} نقطة):\n{preview_list}",
+        max_tokens=320,
+    )
+    post_comment(
+        f"🔎 **نتائج الاستكشاف الثابت الفورية ({len(findings)} نقطة):**\n{preview_list}\n\n"
+        f"💡 **خطة وأفكار ZeroHunter للخطوة التالية:**\n{immediate_plan}"
+    )
 
-    # Phase 2 & 3: Prioritize C/C++ files for LibFuzzer + ASan verification
-    c_findings = [f for f in findings if f["file"].endswith((".c", ".cpp"))]
+    report_sections: List[str] = [
+        f"**الهدف:** `{ISSUE_BODY}`\n**الاستكشاف الثابت:** تم رصد {len(findings)} نقطة مشبوهة."
+    ]
+
+    # المرحلة 3: تجربة Fuzzing على أهم 3 ملفات C/C++ مكتشفة وعرض كل نتيجة فوراً
+    c_findings = [f for f in findings if f["file"].endswith((".c", ".cpp"))][:3]
     if c_findings:
-        top = c_findings[0]
-        state = {"phase": "3/4 توليد الفازر والتجربة", "progress": 55, "eta": FUZZ_TIMEOUT + 30, "detail": f"توليد Harness لـ {top['file']}"}
-        post_status(state["phase"], state["progress"], state["eta"], state["detail"])
-
-        snippet = extract_target_context(top["file"], top["line"])
-        directive_note = f"\nUser steering note: {'; '.join(directives)}" if directives else ""
-        harness_prompt = (
-            "Write ONLY valid C code implementing int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) "
-            "to fuzz the target function shown below. Include <stdint.h> and <stddef.h>.\n"
-            f"Target file: {top['file']}\n{snippet}{directive_note}"
-        )
-        raw_harness = chatml_query(llm, "You are ZeroHunter, a C/C++ fuzzing harness specialist.", harness_prompt, max_tokens=380)
-        code_match = re.search(r"```(?:c|cpp)?\n(.*?)```", raw_harness, re.DOTALL)
-        harness_code = code_match.group(1) if code_match else raw_harness
-
-        fuzz_res = run_libfuzzer_on_target(top["file"], harness_code, timeout_sec=FUZZ_TIMEOUT)
-        poll_user_commands(llm, state)
-
-        if fuzz_res["crashed"]:
-            state = {"phase": "4/4 فرز الانهيار", "progress": 85, "eta": 20, "detail": "تحليل أثر ASan وصياغة التصحيح"}
+        for idx, top in enumerate(c_findings, start=1):
+            pct = 45 + idx * 12
+            state = {
+                "phase": f"3/4 تجربة Fuzzing ({idx}/{len(c_findings)})",
+                "progress": pct,
+                "eta": FUZZ_TIMEOUT + 20,
+                "detail": f"توليد Harness وتشغيل ASan على {top['file']}",
+                "findings_count": len(findings),
+            }
             post_status(state["phase"], state["progress"], state["eta"], state["detail"])
-            triage_input = summarize_crash_for_llm(fuzz_res["asan_log"], snippet)
-            analysis = chatml_query(
-                llm,
-                "You are ZeroHunter. Explain the root cause of this confirmed ASan crash in Arabic and provide a safe C patch.",
-                triage_input,
-                max_tokens=500,
+
+            snippet = extract_target_context(top["file"], top["line"])
+            directive_note = f"\nتوجيه المستخدم: {'; '.join(directives)}" if directives else ""
+            harness_prompt = (
+                "Write ONLY valid C code implementing int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) "
+                "to fuzz the target function shown below. Include <stdint.h> and <stddef.h>.\n"
+                f"Target file: {top['file']}\n{snippet}{directive_note}"
             )
-            report_sections.append(
-                f"### 🚨 ثغرة مؤكدة (Confirmed ASan Crash)\n"
-                f"- **الملف:** `{top['file']}` (السطر {top['line']})\n"
-                f"- **ملف الإثبات (PoC):** `{fuzz_res['crash_file']}`\n\n"
-                f"{analysis}"
-            )
-        else:
-            report_sections.append(f"تم تشغيل LibFuzzer على `{top['file']}` لمدة {FUZZ_TIMEOUT} ثانية دون انهيار حرج.")
+            raw_harness = chatml_query(llm, "You are ZeroHunter, a C/C++ fuzzing harness specialist.", harness_prompt, max_tokens=380)
+            code_match = re.search(r"```(?:c|cpp)?\n(.*?)```", raw_harness, re.DOTALL)
+            harness_code = code_match.group(1) if code_match else raw_harness
+
+            fuzz_res = run_libfuzzer_on_target(top["file"], harness_code, timeout_sec=FUZZ_TIMEOUT)
+            directives.extend(poll_user_commands(llm, state))
+
+            if fuzz_res["crashed"]:
+                triage_input = summarize_crash_for_llm(fuzz_res["asan_log"], snippet)
+                analysis = chatml_query(
+                    llm,
+                    "أنت ZeroHunter. اشرح سبب هذا الانهيار المؤكد (ASan Crash) بالعربية الفصحى، واقترح التصحيح الآمن وأفكاراً لمنع تكراره.",
+                    triage_input,
+                    max_tokens=480,
+                )
+                msg_block = (
+                    f"🚨 **اكتشاف فوري — ثغرة مؤكدة في `{top['file']}` (سطر {top['line']})**\n"
+                    f"- **ملف الإثبات (PoC):** `{fuzz_res['crash_file']}`\n\n{analysis}"
+                )
+                post_comment(msg_block)
+                report_sections.append(msg_block)
+            else:
+                ok_msg = f"🛡️ **نتيجة فحص `{top['file']}`:** صمد الفازر لمدة {FUZZ_TIMEOUT} ثانية دون انهيار ذاكرة."
+                post_comment(ok_msg)
+                report_sections.append(ok_msg)
     elif findings:
-        state = {"phase": "4/4 التحليل النهائي", "progress": 80, "eta": 25, "detail": "مراجعة نتائج SAST للنقاط المكتشفة"}
+        state = {"phase": "4/4 التحليل النهائي", "progress": 82, "eta": 20, "detail": "تحليل النتائج واقتراح الخطط", "findings_count": len(findings)}
         post_status(state["phase"], state["progress"], state["eta"], state["detail"])
         summary_text = json.dumps(findings[:8], ensure_ascii=False, indent=2)
         analysis = chatml_query(
             llm,
-            "You are ZeroHunter. Analyze these static findings in Arabic, filter false positives, and suggest fixes.",
+            "أنت ZeroHunter. حلل هذه النتائج بالعربية، استبعد التنبيهات الكاذبة، واقترح خطة إصلاح وأفكار تحسين شاملة.",
             summary_text,
-            max_tokens=500,
+            max_tokens=550,
         )
         report_sections.append(analysis)
     else:

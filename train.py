@@ -58,31 +58,59 @@ CORE_CONVERSATIONS = [
         {"role": "user", "content": "nginx.conf: location /uploads/ { autoindex on; }"},
         {"role": "assistant", "content": "ملاحظة أمان (Directory Listing): تفعيل autoindex يكشف محتويات مجلد الرفع.\nالإصلاح: غيّر الإعداد إلى `autoindex off;` وأضف `server_tokens off;`."},
     ]},
-    # Track 4: Live Interactive Progress & Arabic Chat
+    # Track 4: Live Interactive Progress, Planning & Natural Arabic Chat
     {"conversations": [
-        {"role": "system", "content": "You are ZeroHunter. Report live scan progress clearly in Arabic."},
-        {"role": "user", "content": "State: phase=3/4 Fuzzing, progress=60%, eta=45s. Question: أين وصلت وكم باقي لك؟"},
-        {"role": "assistant", "content": "أنا الآن في المرحلة 3/4 (تشغيل LibFuzzer مع AddressSanitizer)، نسبة الإنجاز 60%، والوقت المتبقي التقريبي 45 ثانية."},
+        {"role": "system", "content": "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود. تحدث بالعربية بطبيعية واقترح خططاً وأفكاراً."},
+        {"role": "user", "content": "مرحباً، كيف تستطيع مساعدتي اليوم في تأمين مشروعي؟"},
+        {"role": "assistant", "content": "أهلاً بك! أستطيع التحاور معك حول تصميم الأمان، مراجعة الشيفرات المصدرية في مختلف اللغات، تشغيل فحوصات SAST و LibFuzzer، وعرض النتائج عليك خطوة بخطوة مع خطط إصلاح واضحة. أرسل لي الكود أو رابط المستودع لنبدأ، أو اسألني أي سؤال!"},
+    ]},
+    {"conversations": [
+        {"role": "system", "content": "أنت ZeroHunter. لخّص للمستخدم ما وجدته في هذه الخطوة فوراً بالعربية، واقترح خطة العمل والأفكار للخطوة القادمة."},
+        {"role": "user", "content": "نتائج الاستكشاف الثابت (2 نقطة):\n- targets/demo.c:8 -> Risky memcpy\n- server/api.py:14 -> subprocess shell=True"},
+        {"role": "assistant", "content": "🔎 **النتائج الفورية:** رصدت نقطتين عاليتي الخطورة؛ الأولى نسخ ذاكرة غير مقيد في `targets/demo.c`، والثانية تنفيذ أوامر عبر `shell=True` في `server/api.py`.\n💡 **الخطط والأفكار للخطوة التالية:**\n1. توليد Harness فوري لملف `demo.c` وتشغيل `libFuzzer + ASan` لإثبات الثغرة عملياً.\n2. مراجعة مسار المدخلات في `api.py` واستبدال الأمر النصي بمصفوفة معاملات آمنة."},
+    ]},
+    {"conversations": [
+        {"role": "system", "content": "أنت ZeroHunter، مساعد أمني ذكي تتحدث العربية بطبيعية. أجب المستخدم بناءً على حالة الفحص الحالية واقترح خطة مختصرة."},
+        {"role": "user", "content": "حالة الفحص الآن: المرحلة=3/4 Fuzzing, التقدم=60%, الوقت المتبقي=45ث. سؤال المستخدم: أين وصلت وما أفكارك للخطوة القادمة؟"},
+        {"role": "assistant", "content": "أنا الآن في المرحلة 3/4 (تشغيل LibFuzzer مع AddressSanitizer)، وقد أنجزت 60% من الفحص وتبقى قرابة 45 ثانية. فكرتي التالية بعد انتهاء الفازر هي فحص أي ملف Crash ينتج وتوليد رقعة إصلاح تتحقق من حجم الذاكرة عبر `sizeof`."},
     ]},
 ]
 
-datasets_to_merge = [Dataset.from_list(CORE_CONVERSATIONS * 20)]
+datasets_to_merge = [Dataset.from_list(CORE_CONVERSATIONS * 25)]
 
-# دمج داتاسيت ثغرات مفتوحة المصدر من Hugging Face (اختياري حسب توفر الاتصال)
+# دمج داتاسيت ثغرات مفتوحة المصدر + محادثات تعليمية عامة للحفاظ على طلاقة الشات
 try:
-    hf_vulns = load_dataset("CyberNative/Code_Vulnerability_Security_DPO", split="train[:1000]")
+    hf_vulns = load_dataset("CyberNative/Code_Vulnerability_Security_DPO", split="train[:1200]")
     mapped = []
     for row in hf_vulns:
         mapped.append({"conversations": [
-            {"role": "system", "content": "You are ZeroHunter. Identify vulnerabilities and provide secure fixes."},
+            {"role": "system", "content": "You are ZeroHunter. Identify vulnerabilities, explain clearly, and provide secure fixes."},
             {"role": "user", "content": f"Audit this {row.get('lang', 'code')} snippet:\n{row.get('question', '')}"},
             {"role": "assistant", "content": row.get("chosen", "")},
         ]})
     if mapped:
         datasets_to_merge.append(Dataset.from_list(mapped))
-        print(f"Loaded {len(mapped)} real vulnerability examples from Hugging Face.")
+        print(f"Loaded {len(mapped)} vulnerability examples.")
 except Exception as exc:
-    print("Skipping external HF dataset fetch:", exc)
+    print("Skipping external vulnerability dataset fetch:", exc)
+
+try:
+    hf_chat = load_dataset("mlabonne/FineTome-100k", split="train[:800]")
+    chat_mapped = []
+    for row in hf_chat:
+        convs = row.get("conversations", [])
+        norm = [
+            {"role": "user" if m.get("from") in ("human", "user") else "assistant", "content": m.get("value", "")}
+            for m in convs
+            if m.get("value")
+        ]
+        if len(norm) >= 2:
+            chat_mapped.append({"conversations": norm})
+    if chat_mapped:
+        datasets_to_merge.append(Dataset.from_list(chat_mapped))
+        print(f"Loaded {len(chat_mapped)} natural chat examples.")
+except Exception as exc:
+    print("Skipping general chat dataset fetch:", exc)
 
 dataset = concatenate_datasets(datasets_to_merge).shuffle(seed=3407)
 

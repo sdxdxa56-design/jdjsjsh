@@ -83,7 +83,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-prompt = st.chat_input("أرسل هدفاً جديداً، أو اسأل الوكيل أثناء عمله (مثلاً: أين وصلت وكم باقي لك؟)")
+prompt = st.chat_input("تحدث مع ZeroHunter بحرية، أو أرسل مستودعاً/كوداً لفحصه، واسأله أثناء التشغيل...")
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     if st.session_state.active_issue:
