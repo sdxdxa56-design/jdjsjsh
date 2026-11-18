@@ -9,6 +9,7 @@ from huggingface_hub import hf_hub_download
 from llama_cpp import Llama
 
 from core.scanner import clone_or_prepare_workspace, run_static_scan, extract_target_context
+from core.knowledge import lookup_online_knowledge
 from modules.binary_fuzz import run_libfuzzer_on_target
 from triage.analyzer import summarize_crash_for_llm, save_markdown_report
 
@@ -129,14 +130,15 @@ def main() -> None:
         post_comment(f"❌ خطأ في تحميل النموذج من Hugging Face ({HF_REPO}/{GGUF_FILE}): {exc}")
         return
 
-    # الوضع 1: محادثة طبيعية وأفكار وخطط بدون تشغيل فحص ملفات
+    # الوضع 1: محادثة طبيعية مع البحث الحي في قواعد المعرفة على الإنترنت
     if not is_audit_request(ISSUE_BODY):
-        post_status("محادثة مباشرة", 50, 15, "النموذج يكتب الرد الآن")
+        post_status("محادثة مباشرة", 50, 15, "البحث في مراجع الإنترنت وتوليد الرد")
+        web_context = lookup_online_knowledge(ISSUE_BODY)
         reply = chatml_query(
             llm,
-            "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود واكتشاف الثغرات. تحدث بالعربية بطبيعية ووضوح، وقدم خططاً وأفكاراً هندسية عملية.",
-            ISSUE_BODY,
-            max_tokens=600,
+            "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود واكتشاف الثغرات. تحدث بالعربية بطبيعية، واستفد من المراجع الحديثة المرفقة من الإنترنت لتقديم خطط وأفكار عملية.",
+            f"سؤال المستخدم: {ISSUE_BODY}\n\nمراجع حديثة من قواعد الثغرات على الإنترنت:\n{web_context}",
+            max_tokens=650,
         )
         post_comment(f"🏁 **التقرير النهائي**\n\n{reply}")
         return

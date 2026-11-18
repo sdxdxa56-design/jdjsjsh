@@ -78,6 +78,16 @@ CORE_CONVERSATIONS = [
 
 datasets_to_merge = [Dataset.from_list(CORE_CONVERSATIONS * 25)]
 
+# دمج البيانات المولدة تلقائياً من قواعد الإنترنت (datasets/auto_curated.jsonl)
+import json
+from pathlib import Path
+auto_file = Path("datasets/auto_curated.jsonl")
+if auto_file.exists():
+    auto_rows = [json.loads(line) for line in auto_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if auto_rows:
+        datasets_to_merge.append(Dataset.from_list(auto_rows))
+        print(f"Loaded {len(auto_rows)} auto-curated internet advisory examples.")
+
 # دمج داتاسيت ثغرات مفتوحة المصدر + محادثات تعليمية عامة للحفاظ على طلاقة الشات
 try:
     hf_vulns = load_dataset("CyberNative/Code_Vulnerability_Security_DPO", split="train[:1200]")
