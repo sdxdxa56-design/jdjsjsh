@@ -104,12 +104,41 @@ def chatml_query(llm: Llama, system_prompt: str, user_prompt: str, max_tokens: i
     return out["choices"][0]["text"].strip()
 
 
+def save_self_play_sample(system_prompt: str, user_prompt: str, assistant_reply: str) -> None:
+    """Saves high-signal audit and chat interactions locally for offline self-training."""
+    if not assistant_reply.strip():
+        return
+    out = Path("datasets/self_play_train.jsonl")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "conversations": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt[:2500]},
+            {"role": "assistant", "content": assistant_reply[:2500]},
+        ]
+    }
+    with out.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def load_model() -> Llama:
-    model_file = hf_hub_download(
-        repo_id=HF_REPO,
-        filename=GGUF_FILE,
-        token=HF_TOKEN,
-    )
+    local_override = os.environ.get("ZEROHUNTER_LOCAL_MODEL", "")
+    if local_override and Path(local_override).exists():
+        model_file = local_override
+    else:
+        try:
+            model_file = hf_hub_download(
+                repo_id=HF_REPO,
+                filename=GGUF_FILE,
+                token=HF_TOKEN,
+            )
+        except Exception:
+            # Offline fallback from local Hugging Face cache if internet is disconnected
+            model_file = hf_hub_download(
+                repo_id=HF_REPO,
+                filename=GGUF_FILE,
+                local_files_only=True,
+            )
     return Llama(model_path=model_file, n_ctx=4096, n_threads=4, verbose=False)
 
 
@@ -130,16 +159,14 @@ def main() -> None:
         post_comment(f"❌ خطأ في تحميل النموذج من Hugging Face ({HF_REPO}/{GGUF_FILE}): {exc}")
         return
 
-    # الوضع 1: محادثة طبيعية مع البحث الحي في قواعد المعرفة على الإنترنت
+    # الوضع 1: محادثة طبيعية مع البحث الحي في قواعد المعرفة على الإنترنت (مع دعم العمل عند انقطاع الإنترنت)
     if not is_audit_request(ISSUE_BODY):
-        post_status("محادثة مباشرة", 50, 15, "البحث في مراجع الإنترنت وتوليد الرد")
+        post_status("محادثة مباشرة", 50, 15, "البحث في المراجع وتوليد الرد")
         web_context = lookup_online_knowledge(ISSUE_BODY)
-        reply = chatml_query(
-            llm,
-            "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود واكتشاف الثغرات. تحدث بالعربية بطبيعية، واستفد من المراجع الحديثة المرفقة من الإنترنت لتقديم خطط وأفكار عملية.",
-            f"سؤال المستخدم: {ISSUE_BODY}\n\nمراجع حديثة من قواعد الثغرات على الإنترنت:\n{web_context}",
-            max_tokens=650,
-        )
+        sys_msg = "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود واكتشاف الثغرات. تحدث بالعربية بطبيعية، واستفد من المراجع الحديثة المرفقة من الإنترنت لتقديم خطط وأفكار عملية."
+        usr_msg = f"سؤال المستخدم: {ISSUE_BODY}\n\nمراجع حديثة من قواعد الثغرات:\n{web_context}"
+        reply = chatml_query(llm, sys_msg, usr_msg, max_tokens=650)
+        save_self_play_sample(sys_msg, ISSUE_BODY, reply)
         post_comment(f"🏁 **التقرير النهائي**\n\n{reply}")
         return
 
@@ -210,6 +237,11 @@ def main() -> None:
                     f"🚨 **اكتشاف فوري — ثغرة مؤكدة في `{top['file']}` (سطر {top['line']})**\n"
                     f"- **ملف الإثبات (PoC):** `{fuzz_res['crash_file']}`\n\n{analysis}"
                 )
+                save_self_play_sample(
+                    "أنت ZeroHunter. اشرح سبب الانهيار المؤكد واقترح التصحيح الآمن بالعربية.",
+                    triage_input,
+                    analysis,
+                )
                 post_comment(msg_block)
                 report_sections.append(msg_block)
             else:
@@ -225,6 +257,11 @@ def main() -> None:
             "أنت ZeroHunter. حلل هذه النتائج بالعربية، استبعد التنبيهات الكاذبة، واقترح خطة إصلاح وأفكار تحسين شاملة.",
             summary_text,
             max_tokens=550,
+        )
+        save_self_play_sample(
+            "أنت ZeroHunter. حلل نتائج الفحص الثابت واقترح خطة إصلاح شاملة بالعربية.",
+            summary_text,
+            analysis,
         )
         report_sections.append(analysis)
     else:

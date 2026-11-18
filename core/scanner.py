@@ -10,9 +10,32 @@ RISKY_C_SINKS = re.compile(r"\b(strcpy|strcat|memcpy|memmove|sprintf|vsprintf|ge
 RISKY_PY_SINKS = re.compile(r"(subprocess\.|os\.system|pickle\.loads|yaml\.load|eval\(|exec\()")
 
 
+def safe_extract_zip(zip_path: Path, dest_dir: Path) -> List[str]:
+    """Safely extracts a .zip archive preventing Zip-Slip path traversal."""
+    import zipfile
+    extracted: List[str] = []
+    dest_root = dest_dir.resolve()
+    dest_root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for member in zf.infolist():
+            if member.is_dir():
+                continue
+            target_path = (dest_root / member.filename).resolve()
+            if not str(target_path).startswith(str(dest_root)):
+                continue
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, target_path.open("wb") as dst:
+                dst.write(src.read())
+            extracted.append(member.filename)
+    return extracted
+
+
 def clone_or_prepare_workspace(target_spec: str, workdir: Path) -> Path:
-    """Prepares either a cloned authorized repository or local repo files for auditing."""
+    """Prepares a local uploaded folder, unpacked archive, or cloned authorized repository."""
     workdir.mkdir(parents=True, exist_ok=True)
+    local_match = re.search(r"workspace/uploads/[A-Za-z0-9_.-]+", target_spec or "")
+    if local_match and Path(local_match.group(0)).exists():
+        return Path(local_match.group(0))
     url_match = re.search(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", target_spec or "")
     if url_match:
         repo_url = url_match.group(0)

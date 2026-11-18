@@ -78,49 +78,50 @@ CORE_CONVERSATIONS = [
 
 datasets_to_merge = [Dataset.from_list(CORE_CONVERSATIONS * 25)]
 
-# دمج البيانات المولدة تلقائياً من قواعد الإنترنت (datasets/auto_curated.jsonl)
+# دمج البيانات المولدة تلقائياً من الإنترنت + تجارب الفحص الذاتية المحلية (Offline Self-Play)
 import json
 from pathlib import Path
-auto_file = Path("datasets/auto_curated.jsonl")
-if auto_file.exists():
-    auto_rows = [json.loads(line) for line in auto_file.read_text(encoding="utf-8").splitlines() if line.strip()]
-    if auto_rows:
-        datasets_to_merge.append(Dataset.from_list(auto_rows))
-        print(f"Loaded {len(auto_rows)} auto-curated internet advisory examples.")
+for extra_path in (Path("datasets/auto_curated.jsonl"), Path("datasets/self_play_train.jsonl")):
+    if extra_path.exists():
+        rows = [json.loads(line) for line in extra_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if rows:
+            datasets_to_merge.append(Dataset.from_list(rows))
+            print(f"Loaded {len(rows)} examples from {extra_path}.")
 
-# دمج داتاسيت ثغرات مفتوحة المصدر + محادثات تعليمية عامة للحفاظ على طلاقة الشات
-try:
-    hf_vulns = load_dataset("CyberNative/Code_Vulnerability_Security_DPO", split="train[:1200]")
-    mapped = []
-    for row in hf_vulns:
-        mapped.append({"conversations": [
-            {"role": "system", "content": "You are ZeroHunter. Identify vulnerabilities, explain clearly, and provide secure fixes."},
-            {"role": "user", "content": f"Audit this {row.get('lang', 'code')} snippet:\n{row.get('question', '')}"},
-            {"role": "assistant", "content": row.get("chosen", "")},
-        ]})
-    if mapped:
-        datasets_to_merge.append(Dataset.from_list(mapped))
-        print(f"Loaded {len(mapped)} vulnerability examples.")
-except Exception as exc:
-    print("Skipping external vulnerability dataset fetch:", exc)
+# دمج داتاسيت ثغرات مفتوحة المصدر + محادثات تعليمية عامة (يُتخطى تلقائياً عند انقطاع الإنترنت)
+if os.environ.get("ZEROHUNTER_OFFLINE", "0") != "1":
+    try:
+        hf_vulns = load_dataset("CyberNative/Code_Vulnerability_Security_DPO", split="train[:1200]")
+        mapped = []
+        for row in hf_vulns:
+            mapped.append({"conversations": [
+                {"role": "system", "content": "You are ZeroHunter. Identify vulnerabilities, explain clearly, and provide secure fixes."},
+                {"role": "user", "content": f"Audit this {row.get('lang', 'code')} snippet:\n{row.get('question', '')}"},
+                {"role": "assistant", "content": row.get("chosen", "")},
+            ]})
+        if mapped:
+            datasets_to_merge.append(Dataset.from_list(mapped))
+            print(f"Loaded {len(mapped)} vulnerability examples.")
+    except Exception as exc:
+        print("Skipping external vulnerability dataset fetch (offline or unavailable):", exc)
 
-try:
-    hf_chat = load_dataset("mlabonne/FineTome-100k", split="train[:800]")
-    chat_mapped = []
-    for row in hf_chat:
-        convs = row.get("conversations", [])
-        norm = [
-            {"role": "user" if m.get("from") in ("human", "user") else "assistant", "content": m.get("value", "")}
-            for m in convs
-            if m.get("value")
-        ]
-        if len(norm) >= 2:
-            chat_mapped.append({"conversations": norm})
-    if chat_mapped:
-        datasets_to_merge.append(Dataset.from_list(chat_mapped))
-        print(f"Loaded {len(chat_mapped)} natural chat examples.")
-except Exception as exc:
-    print("Skipping general chat dataset fetch:", exc)
+    try:
+        hf_chat = load_dataset("mlabonne/FineTome-100k", split="train[:800]")
+        chat_mapped = []
+        for row in hf_chat:
+            convs = row.get("conversations", [])
+            norm = [
+                {"role": "user" if m.get("from") in ("human", "user") else "assistant", "content": m.get("value", "")}
+                for m in convs
+                if m.get("value")
+            ]
+            if len(norm) >= 2:
+                chat_mapped.append({"conversations": norm})
+        if chat_mapped:
+            datasets_to_merge.append(Dataset.from_list(chat_mapped))
+            print(f"Loaded {len(chat_mapped)} natural chat examples.")
+    except Exception as exc:
+        print("Skipping general chat dataset fetch (offline or unavailable):", exc)
 
 dataset = concatenate_datasets(datasets_to_merge).shuffle(seed=3407)
 

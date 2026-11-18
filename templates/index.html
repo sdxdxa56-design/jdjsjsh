@@ -6,34 +6,50 @@
   <title>ZeroHunter Interactive</title>
   <style>
     body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
-    .wrap { max-width: 900px; margin: 0 auto; }
-    .bar { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; font-size: 14px; }
-    #chat-box { height: 62vh; overflow-y: auto; border: 1px solid #334155; border-radius: 8px; padding: 16px; background: #1e293b; margin-bottom: 12px; }
+    .wrap { max-width: 960px; margin: 0 auto; }
+    .bar { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: center; font-size: 14px; }
+    .upload-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    #chat-box { height: 58vh; overflow-y: auto; border: 1px solid #334155; border-radius: 8px; padding: 16px; background: #1e293b; margin-bottom: 12px; }
     .msg { margin-bottom: 12px; padding: 12px; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; }
     .user { background: #1d4ed8; margin-right: 15%; }
     .bot { background: #0f172a; border: 1px solid #334155; margin-left: 15%; }
     .input-area { display: flex; gap: 10px; }
-    input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #fff; }
-    button { padding: 12px 20px; border: none; border-radius: 8px; background: #16a34a; color: #fff; font-weight: 600; cursor: pointer; }
+    input[type="text"] { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #fff; }
+    button, .btn { padding: 10px 16px; border: none; border-radius: 8px; background: #16a34a; color: #fff; font-weight: 600; cursor: pointer; font-size: 13px; }
+    .btn-sec { background: #334155; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h2>ZeroHunter — الوكيل الأمني التفاعلي</h2>
+    <h2>ZeroHunter — الدردشة مع نموذجك ورفع الملفات المضغوطة والمجلدات</h2>
     <div class="bar">
-      <span id="phase-text">الحالة: جاهز</span>
-      <span id="eta-text">التقدم: 0%</span>
+      <div>
+        <span id="phase-text">الحالة: جاهز</span>
+        <span id="eta-text" style="margin-right: 12px; color: #94a3b8;">التقدم: 0%</span>
+      </div>
+      <div class="upload-row">
+        <label class="btn btn-sec">
+          رفع ZIP
+          <input type="file" id="zip-input" accept=".zip" style="display:none" onchange="uploadSelected(this.files)">
+        </label>
+        <label class="btn btn-sec">
+          رفع مجلد
+          <input type="file" id="dir-input" webkitdirectory directory multiple style="display:none" onchange="uploadSelected(this.files)">
+        </label>
+        <button class="btn" onclick="sendPresetCmd('فككه')">فككه الآن</button>
+      </div>
     </div>
     <div id="chat-box">
-      <div class="msg bot">أرسل رابط مستودع أو هدف فحص، ويمكنك سؤالي أثناء التشغيل (مثلاً: أين وصلت وكم باقي لك؟).</div>
+      <div class="msg bot">ارفع ملف .zip أو مجلد من الأزرار بالأعلى، ثم قل لي «فككه» لنتفاهم حول ملفاته ونفحصها خطوة بخطوة!</div>
     </div>
     <div class="input-area">
-      <input type="text" id="msg-input" placeholder="اكتب هدفك أو سؤالك للوكيل..." onkeypress="if(event.key==='Enter') sendMsg()">
+      <input type="text" id="msg-input" placeholder="اكتب: فككه، أو اسألني أي سؤال..." onkeypress="if(event.key==='Enter') sendMsg()">
       <button onclick="sendMsg()">إرسال</button>
     </div>
   </div>
   <script>
     let activeIssueId = null;
+    let currentSessionId = '';
     let liveBotMsg = null;
     let pollTimer = null;
 
@@ -45,6 +61,23 @@
       box.appendChild(div);
       box.scrollTop = box.scrollHeight;
       return div;
+    }
+
+    async function uploadSelected(fileList) {
+      if (!fileList || !fileList.length) return;
+      const form = new FormData();
+      if (currentSessionId) form.append('session_id', currentSessionId);
+      for (const f of fileList) form.append('files', f, f.webkitRelativePath || f.name);
+      const res = await fetch('/api/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.error) { addMsg('❌ ' + data.error, 'bot'); return; }
+      currentSessionId = data.session_id;
+      addMsg('📁 ' + data.message, 'bot');
+    }
+
+    function sendPresetCmd(cmd) {
+      document.getElementById('msg-input').value = cmd;
+      sendMsg();
     }
 
     async function sendMsg() {
@@ -63,14 +96,15 @@
         return;
       }
 
-      liveBotMsg = addMsg('⏳ جاري بدء المهمة في GitHub Actions...', 'bot');
+      liveBotMsg = addMsg('⏳ جاري المعالجة...', 'bot');
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message: text})
+        body: JSON.stringify({message: text, session_id: currentSessionId})
       });
       const data = await res.json();
       if (data.error) { liveBotMsg.innerText = '❌ ' + data.error; return; }
+      if (data.direct_reply) { liveBotMsg.innerText = data.direct_reply; return; }
       activeIssueId = data.issue_id;
       pollTimer = setInterval(checkStatus, 3500);
     }
