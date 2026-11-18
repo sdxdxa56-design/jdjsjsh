@@ -21,6 +21,8 @@ ISSUE_BODY = os.environ.get("ISSUE_BODY", "Audit local targets/demo.c")
 REPO = os.environ.get("REPO", "sdxdxa56-design/jdjsjsh")
 HF_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-gguf")
 GGUF_FILE = os.environ.get("ZEROHUNTER_GGUF_FILE", "zerohunter-3b-q4_k_m.gguf")
+FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"
+FALLBACK_GGUF_FILE = "qwen2.5-coder-3b-instruct-q4_k_m.gguf"
 FUZZ_TIMEOUT = int(os.environ.get("FUZZ_TIMEOUT", "90"))
 
 HEADERS = {
@@ -126,19 +128,27 @@ def load_model() -> Llama:
     if local_override and Path(local_override).exists():
         model_file = local_override
     else:
-        try:
-            model_file = hf_hub_download(
-                repo_id=HF_REPO,
-                filename=GGUF_FILE,
-                token=HF_TOKEN,
-            )
-        except Exception:
-            # Offline fallback from local Hugging Face cache if internet is disconnected
-            model_file = hf_hub_download(
-                repo_id=HF_REPO,
-                filename=GGUF_FILE,
-                local_files_only=True,
-            )
+        model_file = ""
+        # 1. Try user's custom trained ZeroHunter GGUF first
+        for tok in (HF_TOKEN, None):
+            try:
+                model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, token=tok)
+                break
+            except Exception:
+                pass
+        # 2. Try offline local cache of custom model
+        if not model_file:
+            try:
+                model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, local_files_only=True)
+            except Exception:
+                pass
+        # 3. Automatic open-source base Qwen2.5-Coder GGUF fallback so chat & audits work immediately
+        if not model_file:
+            try:
+                post_status("1/4 التهيئة", 10, 150, f"تحميل النموذج التلقائي ({FALLBACK_HF_REPO}) ريثما يُرفع نموذجك المخصص")
+                model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, token=None)
+            except Exception:
+                model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, local_files_only=True)
     return Llama(model_path=model_file, n_ctx=4096, n_threads=4, verbose=False)
 
 
