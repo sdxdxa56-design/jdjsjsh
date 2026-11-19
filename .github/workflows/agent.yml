@@ -39,6 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_HOME: /github/home/.cache/huggingface
           ISSUE_NUMBER: ${{ github.event.issue.number || '0' }}
           ISSUE_BODY: ${{ github.event.inputs.target_prompt || github.event.issue.body }}
           REPO: ${{ github.repository }}

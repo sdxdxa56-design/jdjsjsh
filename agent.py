@@ -96,13 +96,27 @@ def poll_user_commands(llm: Optional[Llama], current_state: Dict[str, Any]) -> L
     return new_directives
 
 
-def chatml_query(llm: Llama, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+def chatml_query(
+    llm: Llama,
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 512,
+    temperature: float = 0.2,
+) -> str:
     prompt = (
         f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
         f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
         f"<|im_start|>assistant\n"
     )
-    out = llm(prompt, max_tokens=max_tokens, stop=["<|im_end|>"], echo=False, temperature=0.2)
+    out = llm(
+        prompt,
+        max_tokens=max_tokens,
+        stop=["<|im_end|>"],
+        echo=False,
+        temperature=temperature,
+        top_p=0.9,
+        repeat_penalty=1.08,
+    )
     return out["choices"][0]["text"].strip()
 
 
@@ -169,13 +183,25 @@ def main() -> None:
         post_comment(f"❌ خطأ في تحميل النموذج من Hugging Face ({HF_REPO}/{GGUF_FILE}): {exc}")
         return
 
-    # الوضع 1: محادثة طبيعية مع البحث الحي في قواعد المعرفة على الإنترنت (مع دعم العمل عند انقطاع الإنترنت)
+    # الوضع 1: محادثة طبيعية شاملة في أي موضوع بالعربية (مع دعم المراجع الحديثة عند السؤال عن الأكواد أو الثغرات)
     if not is_audit_request(ISSUE_BODY):
-        post_status("محادثة مباشرة", 50, 15, "البحث في المراجع وتوليد الرد")
-        web_context = lookup_online_knowledge(ISSUE_BODY)
-        sys_msg = "أنت ZeroHunter، مساعد ذكاء اصطناعي متخصص في أمن الكود واكتشاف الثغرات. تحدث بالعربية بطبيعية، واستفد من المراجع الحديثة المرفقة من الإنترنت لتقديم خطط وأفكار عملية."
-        usr_msg = f"سؤال المستخدم: {ISSUE_BODY}\n\nمراجع حديثة من قواعد الثغرات:\n{web_context}"
-        reply = chatml_query(llm, sys_msg, usr_msg, max_tokens=650)
+        post_status("محادثة مباشرة", 55, 15, "توليد الرد عبر ZeroHunter")
+        needs_sec_lookup = any(
+            kw in ISSUE_BODY.lower()
+            for kw in ("ثغر", "cve", "أمن", "اختراق", "حماي", "برمج", "كود", "سيرفر", "security", "exploit", "fuzz")
+        )
+        web_context = lookup_online_knowledge(ISSUE_BODY) if needs_sec_lookup else ""
+        sys_msg = (
+            "أنت ZeroHunter، مساعد ذكاء اصطناعي ودود وذكي يتحدث العربية بطلاقة وطبيعية، "
+            "ومتخصص أيضاً في البرمجة وأمن الكود واكتشاف الثغرات. أجب المستخدم بوضوح وتفصيل في أي موضوع يطرحه، "
+            "وقدّم خططاً وأفكاراً عملية ومفيدة."
+        )
+        usr_msg = (
+            f"{ISSUE_BODY}\n\nمراجع حديثة مساعدة:\n{web_context}"
+            if web_context
+            else ISSUE_BODY
+        )
+        reply = chatml_query(llm, sys_msg, usr_msg, max_tokens=700, temperature=0.55)
         save_self_play_sample(sys_msg, ISSUE_BODY, reply)
         post_comment(f"🏁 **التقرير النهائي**\n\n{reply}")
         return
