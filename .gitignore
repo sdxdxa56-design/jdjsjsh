@@ -6,6 +6,7 @@ reports/
 outputs/
 models/
 .hf_cache/
+.zh_models/
 __pycache__/
 *.pyc
 *.gguf

@@ -137,17 +137,32 @@ def save_self_play_sample(system_prompt: str, user_prompt: str, assistant_reply:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _stream_download(url: str, dest: Path) -> str:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".gguf.part")
+    with requests.get(url, stream=True, timeout=60, allow_redirects=True) as resp:
+        resp.raise_for_status()
+        with tmp.open("wb") as fh:
+            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    fh.write(chunk)
+    tmp.replace(dest)
+    return str(dest)
+
+
 def load_model() -> Llama:
     local_override = os.environ.get("ZEROHUNTER_LOCAL_MODEL", "")
     if local_override and Path(local_override).exists():
         model_file = local_override
     else:
         model_file = ""
-        # 1. Try offline local cache of custom model first (0ms)
-        try:
-            model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, local_files_only=True)
-        except Exception:
-            pass
+        custom_flat = Path(".zh_models") / GGUF_FILE
+        fallback_flat = Path(".zh_models") / FALLBACK_GGUF_FILE
+
+        # 1. Instant local flat file if already cached
+        if custom_flat.exists() and custom_flat.stat().st_size > 100_000_000:
+            model_file = str(custom_flat)
+
         # 2. Fast HEAD check before trying remote custom HF repo download
         if not model_file:
             try:
@@ -162,13 +177,17 @@ def load_model() -> Llama:
                     model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, token=HF_TOKEN)
             except Exception:
                 pass
-        # 3. Fast pre-cached 1.5B CPU fallback so GitHub Actions replies without multi-GB stall
+
+        # 3. Instant pre-warmed flat CPU GGUF from .zh_models cache (0s download, no HF lockfiles)
         if not model_file:
-            try:
-                model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, local_files_only=True)
-            except Exception:
-                post_status("1/4 التهيئة", 10, 45, f"تحميل النموذج السريع ({FALLBACK_HF_REPO}) وتخزينه في كاش GitHub")
-                model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, token=None)
+            if fallback_flat.exists() and fallback_flat.stat().st_size > 100_000_000:
+                model_file = str(fallback_flat)
+            else:
+                post_status("1/4 التهيئة", 10, 30, f"تحميل النموذج السريع ({FALLBACK_HF_REPO}) مباشرة")
+                model_file = _stream_download(
+                    f"https://huggingface.co/{FALLBACK_HF_REPO}/resolve/main/{FALLBACK_GGUF_FILE}",
+                    fallback_flat,
+                )
 
     threads = max(2, min(8, os.cpu_count() or 4))
     preferred_ctx = min(8192, 3072)

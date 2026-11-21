@@ -29,20 +29,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Hugging Face GGUF Model
+      - name: Cache Pre-Warmed Fast GGUF Model
         uses: actions/cache@v4
         with:
-          path: .hf_cache
-          key: hf-gguf-cpu-1.5b-v1
+          path: .zh_models
+          key: zh-cpu-1.5b-flat-v1
           restore-keys: |
-            hf-gguf-cpu-
-            hf-gguf-
+            zh-cpu-1.5b-
 
       - name: Run ZeroHunter Agent Loop
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_HOME: ${{ github.workspace }}/.hf_cache
+          HF_HOME: /tmp/zh_hf_cache
           ISSUE_NUMBER: ${{ github.event.issue.number || '0' }}
           ISSUE_BODY: ${{ github.event.inputs.target_prompt || github.event.issue.body }}
           REPO: ${{ github.repository }}
