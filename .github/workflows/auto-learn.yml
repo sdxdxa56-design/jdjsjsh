@@ -19,8 +19,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install requests
-        run: python3 -m pip install requests
+      - name: Install requests and huggingface_hub
+        run: python3 -m pip install -q requests huggingface_hub
+
+      - name: Cache Fast CPU Model for Instant Agent Replies
+        id: hf-cache
+        uses: actions/cache@v4
+        with:
+          path: .hf_cache
+          key: hf-gguf-cpu-1.5b-v1
+
+      - name: Pre-warm Fast CPU Model Cache
+        if: steps.hf-cache.outputs.cache-hit != 'true'
+        env:
+          HF_HOME: ${{ github.workspace }}/.hf_cache
+        run: |
+          python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF', filename='qwen2.5-coder-1.5b-instruct-q4_k_m.gguf')"
 
       - name: Fetch latest public CVEs and Advisories into ChatML dataset
         env:

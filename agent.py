@@ -21,8 +21,8 @@ ISSUE_BODY = os.environ.get("ISSUE_BODY", "Audit local targets/demo.c")
 REPO = os.environ.get("REPO", "sdxdxa56-design/jdjsjsh")
 HF_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-gguf")
 GGUF_FILE = os.environ.get("ZEROHUNTER_GGUF_FILE", "zerohunter-7b-q5_k_m.gguf")
-FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"
-FALLBACK_GGUF_FILE = "qwen2.5-coder-3b-instruct-q4_k_m.gguf"
+FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
+FALLBACK_GGUF_FILE = "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
 FUZZ_TIMEOUT = int(os.environ.get("FUZZ_TIMEOUT", "90"))
 
 HEADERS = {
@@ -143,36 +143,62 @@ def load_model() -> Llama:
         model_file = local_override
     else:
         model_file = ""
-        # 1. Try user's custom trained ZeroHunter GGUF first
-        for tok in (HF_TOKEN, None):
-            try:
-                model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, token=tok)
-                break
-            except Exception:
-                pass
-        # 2. Try offline local cache of custom model
+        # 1. Try offline local cache of custom model first (0ms)
+        try:
+            model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, local_files_only=True)
+        except Exception:
+            pass
+        # 2. Fast HEAD check before trying remote custom HF repo download
         if not model_file:
             try:
-                model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, local_files_only=True)
+                head_headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+                probe = requests.head(
+                    f"https://huggingface.co/{HF_REPO}/resolve/main/{GGUF_FILE}",
+                    headers=head_headers,
+                    allow_redirects=True,
+                    timeout=4,
+                )
+                if probe.status_code == 200:
+                    model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, token=HF_TOKEN)
             except Exception:
                 pass
-        # 3. Automatic open-source base Qwen2.5-Coder GGUF fallback so chat & audits work immediately
+        # 3. Fast pre-cached 1.5B CPU fallback so GitHub Actions replies without multi-GB stall
         if not model_file:
             try:
-                post_status("1/4 التهيئة", 10, 150, f"تحميل النموذج التلقائي ({FALLBACK_HF_REPO}) ريثما يُرفع نموذجك المخصص")
-                model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, token=None)
-            except Exception:
                 model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, local_files_only=True)
-    return Llama(model_path=model_file, n_ctx=8192, n_threads=4, verbose=False)
+            except Exception:
+                post_status("1/4 التهيئة", 10, 45, f"تحميل النموذج السريع ({FALLBACK_HF_REPO}) وتخزينه في كاش GitHub")
+                model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, token=None)
+
+    threads = max(2, min(8, os.cpu_count() or 4))
+    preferred_ctx = min(8192, 3072)
+    try:
+        return Llama(
+            model_path=model_file,
+            n_ctx=preferred_ctx,
+            n_batch=512,
+            n_threads=threads,
+            use_mmap=True,
+            verbose=False,
+        )
+    except Exception:
+        return Llama(
+            model_path=model_file,
+            n_ctx=2048,
+            n_batch=256,
+            n_threads=threads,
+            use_mmap=True,
+            verbose=False,
+        )
 
 
-def main() -> None:
+def _run_agent() -> None:
     start_time = time.time()
     state: Dict[str, Any] = {
         "phase": "1/4 التهيئة",
         "progress": 5,
-        "eta": 180,
-        "detail": "تحميل النموذج وتجهيز الجلسة",
+        "eta": 35,
+        "detail": "تهيئة النموذج من الكاش وبدء الجلسة",
         "findings_count": 0,
     }
     post_status(state["phase"], state["progress"], state["eta"], state["detail"])
@@ -185,10 +211,10 @@ def main() -> None:
 
     # الوضع 0: دردشة وتحليل مخصص حصرياً للملفات المرفوعة والمفككة من المستخدم (يمنع الرجوع لـ targets/demo.c)
     if "[UPLOADED_WORKSPACE_CONTEXT]" in ISSUE_BODY:
-        post_status("تحليل الملفات المرفوعة", 60, 20, "قراءة بيانات الأرشيف المفكك وتوليد الرد")
+        post_status("تحليل الملفات المرفوعة", 60, 15, "قراءة بيانات الأرشيف المفكك وتوليد الرد")
         parts = ISSUE_BODY.split("[UPLOADED_WORKSPACE_CONTEXT]", 1)
         clean_question = parts[0].strip() or "اشرح محتويات الملفات المرفوعة وهل توجد ثغرات."
-        ws_context = parts[1].strip()[:3200]
+        ws_context = parts[1].strip()[:2600]
         sys_msg = (
             "أنت ZeroHunter، مساعد ذكاء اصطناعي خبير في هندسة البرمجيات وفحص الثغرات. "
             "أجب المستخدم بالعربية بوضوح ودقة اعتماداً حصرياً على الملفات والمعلومات المذكورة في السياق المرفق فقط. "
@@ -197,7 +223,7 @@ def main() -> None:
             "ممنوع تماماً ذكر ملفات افتراضية غير موجودة في السياق مثل demo.c."
         )
         usr_msg = f"سؤال المستخدم: {clean_question}\n\nتفاصيل الملفات المرفوعة والمفككة:\n{ws_context}"
-        reply = chatml_query(llm, sys_msg, usr_msg, max_tokens=720, temperature=0.35)
+        reply = chatml_query(llm, sys_msg, usr_msg, max_tokens=480, temperature=0.35)
         save_self_play_sample(sys_msg, clean_question, reply)
         post_comment(f"🏁 **التقرير النهائي**\n\n{reply}")
         return
@@ -326,6 +352,13 @@ def main() -> None:
     save_markdown_report("ZeroHunter Security Audit Report", report_sections)
     final_body = "\n\n".join(report_sections)
     post_comment(f"🏁 **التقرير النهائي** (استغرق {elapsed} ثانية)\n\n{final_body}")
+
+
+def main() -> None:
+    try:
+        _run_agent()
+    except Exception as exc:
+        post_comment(f"❌ تعذر إتمام المعالجة في الوكيل: {exc}")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ corpus/
 reports/
 outputs/
 models/
+.hf_cache/
 __pycache__/
 *.pyc
 *.gguf
