@@ -143,11 +143,17 @@ def chat():
                             ws_note += f"\n\nمقتطف من {p.name}:\n" + p.read_text(encoding="utf-8", errors="ignore")[:1800]
                         except OSError:
                             pass
+        sys_prompt = (
+            "أنت ZeroHunter، مساعد ذكاء اصطناعي خبير تتحدث العربية بطبيعية. "
+            "أجب اعتماداً حصرياً على الملفات والسياق المرفق في الرسالة إذا وُجد [UPLOADED_WORKSPACE_CONTEXT]، وممنوع تماماً ذكر ملفات افتراضية مثل demo.c."
+            if "[UPLOADED_WORKSPACE_CONTEXT]" in user_msg
+            else "أنت ZeroHunter، مساعد أمني ذكي تتحدث العربية بطبيعية وتفحص الكود والملفات المرفوعة وتقترح خططاً وأفكاراً."
+        )
         prompt = (
-            "<|im_start|>system\nأنت ZeroHunter، مساعد أمني ذكي تتحدث العربية بطبيعية وتفحص الكود والملفات المرفوعة وتقترح خططاً وأفكاراً.<|im_end|>\n"
+            f"<|im_start|>system\n{sys_prompt}<|im_end|>\n"
             f"<|im_start|>user\n{user_msg}{ws_note}<|im_end|>\n<|im_start|>assistant\n"
         )
-        out = llm(prompt, max_tokens=512, stop=["<|im_end|>"], echo=False, temperature=0.2)
+        out = llm(prompt, max_tokens=640, stop=["<|im_end|>"], echo=False, temperature=0.25)
         return jsonify({"direct_reply": out["choices"][0]["text"].strip()})
 
     if not GITHUB_TOKEN:
