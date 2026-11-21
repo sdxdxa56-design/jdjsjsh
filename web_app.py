@@ -30,7 +30,16 @@ def get_local_llm():
         return _LOCAL_LLM
     if LOCAL_MODEL_PATH and Path(LOCAL_MODEL_PATH).exists():
         from llama_cpp import Llama
-        _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=8192, n_threads=4, verbose=False)
+        try:
+            _LOCAL_LLM = Llama(
+                model_path=LOCAL_MODEL_PATH,
+                n_ctx=8192,
+                n_gpu_layers=-1,
+                n_threads=4,
+                verbose=False,
+            )
+        except Exception:
+            _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=8192, n_threads=4, verbose=False)
     return _LOCAL_LLM
 
 

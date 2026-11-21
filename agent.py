@@ -21,8 +21,8 @@ ISSUE_BODY = os.environ.get("ISSUE_BODY", "Audit local targets/demo.c")
 REPO = os.environ.get("REPO", "sdxdxa56-design/jdjsjsh")
 HF_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-gguf")
 GGUF_FILE = os.environ.get("ZEROHUNTER_GGUF_FILE", "zerohunter-7b-q5_k_m.gguf")
-FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF"
-FALLBACK_GGUF_FILE = "qwen2.5-coder-7b-instruct-q5_k_m.gguf"
+FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"
+FALLBACK_GGUF_FILE = "qwen2.5-coder-3b-instruct-q4_k_m.gguf"
 FUZZ_TIMEOUT = int(os.environ.get("FUZZ_TIMEOUT", "90"))
 
 HEADERS = {
