@@ -183,6 +183,25 @@ def main() -> None:
         post_comment(f"❌ خطأ في تحميل النموذج من Hugging Face ({HF_REPO}/{GGUF_FILE}): {exc}")
         return
 
+    # الوضع 0: دردشة وتحليل مخصص حصرياً للملفات المرفوعة والمفككة من المستخدم (يمنع الرجوع لـ targets/demo.c)
+    if "[UPLOADED_WORKSPACE_CONTEXT]" in ISSUE_BODY:
+        post_status("تحليل الملفات المرفوعة", 60, 20, "قراءة بيانات الأرشيف المفكك وتوليد الرد")
+        parts = ISSUE_BODY.split("[UPLOADED_WORKSPACE_CONTEXT]", 1)
+        clean_question = parts[0].strip() or "اشرح محتويات الملفات المرفوعة وهل توجد ثغرات."
+        ws_context = parts[1].strip()[:3200]
+        sys_msg = (
+            "أنت ZeroHunter، مساعد ذكاء اصطناعي خبير في هندسة البرمجيات وفحص الثغرات. "
+            "أجب المستخدم بالعربية بوضوح ودقة اعتماداً حصرياً على الملفات والمعلومات المذكورة في السياق المرفق فقط. "
+            "إذا سألك عن نوع التطبيق فاستنتجه من المسارات والملفات المرفقة (مثل Unity / Android / AppLovin / Web / Python / C)، "
+            "وإذا سألك عن الثغرات فاذكر فقط ما رُصد في هذه الملفات المرفوعة أو أكّد عدم وجود ثغرات خطرة مرصودة فيها. "
+            "ممنوع تماماً ذكر ملفات افتراضية غير موجودة في السياق مثل demo.c."
+        )
+        usr_msg = f"سؤال المستخدم: {clean_question}\n\nتفاصيل الملفات المرفوعة والمفككة:\n{ws_context}"
+        reply = chatml_query(llm, sys_msg, usr_msg, max_tokens=720, temperature=0.35)
+        save_self_play_sample(sys_msg, clean_question, reply)
+        post_comment(f"🏁 **التقرير النهائي**\n\n{reply}")
+        return
+
     # الوضع 1: محادثة طبيعية شاملة في أي موضوع بالعربية (مع دعم المراجع الحديثة عند السؤال عن الأكواد أو الثغرات)
     if not is_audit_request(ISSUE_BODY):
         post_status("محادثة مباشرة", 55, 15, "توليد الرد عبر ZeroHunter")
