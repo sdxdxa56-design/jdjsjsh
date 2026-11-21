@@ -30,7 +30,7 @@ def get_local_llm():
         return _LOCAL_LLM
     if LOCAL_MODEL_PATH and Path(LOCAL_MODEL_PATH).exists():
         from llama_cpp import Llama
-        _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=4096, n_threads=4, verbose=False)
+        _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=8192, n_threads=4, verbose=False)
     return _LOCAL_LLM
 
 

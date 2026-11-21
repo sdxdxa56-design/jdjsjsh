@@ -30,10 +30,10 @@ if not gguf_files:
     raise SystemExit(f"No .gguf file found inside {GGUF_DIR} or current directory")
 
 chosen = sorted(gguf_files, key=lambda p: p.stat().st_size, reverse=True)[0]
-print(f"Uploading {chosen} -> {TARGET_REPO}/zerohunter-3b-q4_k_m.gguf...")
+print(f"Uploading {chosen} -> {TARGET_REPO}/zerohunter-7b-q5_k_m.gguf...")
 api.upload_file(
     path_or_fileobj=str(chosen),
-    path_in_repo="zerohunter-3b-q4_k_m.gguf",
+    path_in_repo="zerohunter-7b-q5_k_m.gguf",
     repo_id=TARGET_REPO,
     repo_type="model",
 )

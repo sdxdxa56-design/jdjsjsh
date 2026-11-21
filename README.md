@@ -9,7 +9,7 @@
 
 ## 2. التشغيل المحلي والدردشة مع فك الملفات المضغوطة (حتى بدون إنترنت)
 - شغّل الواجهة مع نموذجك المحلي مباشرة:
-  `ZEROHUNTER_LOCAL_MODEL=./zerohunter_gguf/zerohunter-3b-q4_k_m.gguf python3 web_app.py`
+  `ZEROHUNTER_LOCAL_MODEL=./zerohunter_gguf/zerohunter-7b-q5_k_m.gguf python3 web_app.py`
 - ارفع ملف `.zip` أو مجلد من الواجهة، ثم اكتب **«فككه»** ليفك الأرشيف ويناقشك حول ملفاته ويفحصها.
 
 ## 3. التدريب التلقائي اليومي في الخلفية

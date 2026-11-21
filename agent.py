@@ -20,9 +20,9 @@ ISSUE_NUM = os.environ.get("ISSUE_NUMBER", "0")
 ISSUE_BODY = os.environ.get("ISSUE_BODY", "Audit local targets/demo.c")
 REPO = os.environ.get("REPO", "sdxdxa56-design/jdjsjsh")
 HF_REPO = os.environ.get("ZEROHUNTER_HF_REPO", "sdxdxa56/zerohunter-qwen-gguf")
-GGUF_FILE = os.environ.get("ZEROHUNTER_GGUF_FILE", "zerohunter-3b-q4_k_m.gguf")
-FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF"
-FALLBACK_GGUF_FILE = "qwen2.5-coder-3b-instruct-q4_k_m.gguf"
+GGUF_FILE = os.environ.get("ZEROHUNTER_GGUF_FILE", "zerohunter-7b-q5_k_m.gguf")
+FALLBACK_HF_REPO = "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF"
+FALLBACK_GGUF_FILE = "qwen2.5-coder-7b-instruct-q5_k_m.gguf"
 FUZZ_TIMEOUT = int(os.environ.get("FUZZ_TIMEOUT", "90"))
 
 HEADERS = {
@@ -163,7 +163,7 @@ def load_model() -> Llama:
                 model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, token=None)
             except Exception:
                 model_file = hf_hub_download(repo_id=FALLBACK_HF_REPO, filename=FALLBACK_GGUF_FILE, local_files_only=True)
-    return Llama(model_path=model_file, n_ctx=4096, n_threads=4, verbose=False)
+    return Llama(model_path=model_file, n_ctx=8192, n_threads=4, verbose=False)
 
 
 def main() -> None:

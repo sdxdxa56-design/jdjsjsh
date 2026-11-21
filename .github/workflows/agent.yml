@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-gguf-3B-q4_k_m
+          key: hf-gguf-7B-q5_k_m
 
       - name: Run ZeroHunter Agent Loop
         env:
@@ -44,7 +44,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.inputs.target_prompt || github.event.issue.body }}
           REPO: ${{ github.repository }}
           ZEROHUNTER_HF_REPO: "sdxdxa56/zerohunter-qwen-gguf"
-          ZEROHUNTER_GGUF_FILE: "zerohunter-3b-q4_k_m.gguf"
+          ZEROHUNTER_GGUF_FILE: "zerohunter-7b-q5_k_m.gguf"
           FUZZ_TIMEOUT: "90"
         run: python3 agent.py
 

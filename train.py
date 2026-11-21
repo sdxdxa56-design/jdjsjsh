@@ -12,9 +12,9 @@ try:
 except ImportError:
     SFTConfig = None
 
-MAX_SEQ_LENGTH = 4096
-BASE_MODEL = "unsloth/Qwen2.5-Coder-3B-Instruct-bnb-4bit"
-QUANT_METHOD = "q4_k_m"
+MAX_SEQ_LENGTH = 8192
+BASE_MODEL = "unsloth/Qwen2.5-Coder-7B-Instruct-bnb-4bit"
+QUANT_METHOD = "q5_k_m"
 OUTPUT_GGUF_DIR = os.environ.get("ZEROHUNTER_OUT_DIR", "./zerohunter_gguf")
 
 # نسب المسارات الأربعة المعتمدة:
