@@ -1,0 +1,58 @@
+name: ZeroHunter 4-Agent Swarm Trainer
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent_id:
+        description: 'Agent to train (all, agent1, agent2, agent3, agent4)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - agent1
+          - agent2
+          - agent3
+          - agent4
+
+permissions:
+  contents: write
+
+jobs:
+  train-swarm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Train Selected Agent(s) From Scratch
+        run: |
+          mkdir -p models datasets
+          AGENT="${{ github.event.inputs.agent_id || 'all' }}"
+          echo "Training target: $AGENT"
+          if [ "$AGENT" = "agent1" ] || [ "$AGENT" = "all" ]; then
+            python3 -m agents.agent1_chat --train
+          fi
+          if [ "$AGENT" = "agent2" ] || [ "$AGENT" = "all" ]; then
+            python3 -m agents.agent2_commander --train
+          fi
+          if [ "$AGENT" = "agent3" ] || [ "$AGENT" = "all" ]; then
+            python3 -m agents.agent3_scanner --train
+          fi
+          if [ "$AGENT" = "agent4" ] || [ "$AGENT" = "all" ]; then
+            python3 -m agents.agent4_accelerator --train
+          fi
+          python3 -m agents.swarm_orchestrator --verify
+
+      - name: Commit & Auto-Push Compact Trained Weights to GitHub
+        run: |
+          git config user.name "ZeroHunter Swarm Trainer"
+          git config user.email "actions@users.noreply.github.com"
+          git add models/ datasets/ .github/workflows/ || true
+          git diff --staged --quiet || git commit -m "Train ZeroHunter agent(s): ${{ github.event.inputs.agent_id || 'all' }} [skip ci]"
+          git push

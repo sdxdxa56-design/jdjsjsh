@@ -22,6 +22,7 @@ HEADERS = {
 }
 
 _LOCAL_LLM = None
+_LOADING_THREAD_STARTED = False
 
 
 def get_local_llm():
@@ -41,6 +42,18 @@ def get_local_llm():
         except Exception:
             _LOCAL_LLM = Llama(model_path=LOCAL_MODEL_PATH, n_ctx=8192, n_threads=4, verbose=False)
     return _LOCAL_LLM
+
+
+def warmup_local_llm():
+    global _LOADING_THREAD_STARTED
+    if _LOADING_THREAD_STARTED:
+        return
+    _LOADING_THREAD_STARTED = True
+    import threading
+    threading.Thread(target=get_local_llm, daemon=True).start()
+
+
+warmup_local_llm()
 
 
 @app.route("/")
@@ -69,7 +82,7 @@ def upload_files():
         f.save(str(target))
         rel_str = "/".join(rel_parts)
         saved_files.append(rel_str)
-        if rel_str.lower().endswith(".zip"):
+        if rel_str.lower().endswith(".zip") or rel_str.lower().endswith(".apk"):
             has_zip = True
 
     return jsonify({
@@ -89,15 +102,28 @@ def perform_unpack(session_id: str) -> tuple[dict, int]:
 
     extracted = []
     extract_dir = session_dir / "extracted"
-    for zp in session_dir.rglob("*.zip"):
+    for zp in list(session_dir.rglob("*.zip")) + list(session_dir.rglob("*.apk")):
         extracted.extend(safe_extract_zip(zp, extract_dir))
 
     findings = run_static_scan(extract_dir if extract_dir.exists() else session_dir)
+    try:
+        from agents.swarm_orchestrator import SwarmOrchestrator
+        swarm_res = SwarmOrchestrator().run_swarm("فحص apk", workspace_dir=session_dir)
+        for af in swarm_res.get("apk_findings", []):
+            findings.append({
+                "tool": "agent3-apk",
+                "file": af.get("file", "APK"),
+                "line": 1,
+                "severity": af.get("severity", "high"),
+                "message": f"{af.get('rule_id')}: ثغرة/نمط مكتشف داخل التطبيق",
+            })
+    except Exception:
+        pass
     return {
         "ok": True,
         "extracted_count": len(extracted),
         "extracted": extracted[:100],
-        "findings": findings[:15],
+        "findings": findings[:20],
         "workspace_path": str(extract_dir if extract_dir.exists() else session_dir),
     }, 200
 
@@ -113,6 +139,7 @@ def chat():
     payload = request.json or {}
     user_msg = payload.get("message", "").strip()
     session_id = payload.get("session_id", "")
+    history = payload.get("history") or []
     if not user_msg:
         return jsonify({"error": "الرسالة فارغة"}), 400
 
@@ -123,7 +150,7 @@ def chat():
             return jsonify({"error": resp_data.get("error", "تعذر فك الأرشيف")}), code
         files_preview = "\n".join(f"- {p}" for p in resp_data.get("extracted", [])[:25])
         findings_list = resp_data.get("findings", [])
-        findings_preview = "\n".join(f"- {f['file']}:{f['line']}: {f['message']}" for f in findings_list[:6])
+        findings_preview = "\n".join(f"- {f['file']}:{f['line']}: {f['message']}" for f in findings_list[:8])
         extra = f"\n\n🔎 المسح الأولي رصد {len(findings_list)} نقطة:\n{findings_preview}" if findings_list else ""
         return jsonify({
             "direct_reply": (
@@ -132,18 +159,19 @@ def chat():
             )
         })
 
-    # If a local GGUF model is loaded, answer directly offline without needing GitHub
+    # If a local GGUF model is loaded, collaborate with all 4 trained agents + Qwen2.5-Coder
     llm = get_local_llm()
     if llm is not None:
         ws_note = ""
+        sdir = None
         if session_id:
             sdir = UPLOAD_BASE / re.sub(r"[^A-Za-z0-9_-]", "", session_id)
             if sdir.exists():
-                all_files = [p for p in sdir.rglob("*") if p.is_file() and p.suffix.lower() != ".zip"]
+                all_files = [p for p in sdir.rglob("*") if p.is_file() and p.suffix.lower() not in (".zip", ".apk")]
                 rel_names = [str(p.relative_to(sdir)) for p in all_files][:40]
                 ws_note = "\nالملفات الموجودة في مساحة العمل:\n" + "\n".join(rel_names)
                 if any(k in user_msg.lower() for k in ("افحص", "فحص", "ثغرات", "اشرح", "audit", "scan")):
-                    local_findings = run_static_scan(sdir)[:8]
+                    local_findings = run_static_scan(sdir)[:10]
                     if local_findings:
                         ws_note += "\n\nنتائج الفحص الثابت:\n" + json.dumps(local_findings, ensure_ascii=False)
                 for p in all_files[:3]:
@@ -152,17 +180,29 @@ def chat():
                             ws_note += f"\n\nمقتطف من {p.name}:\n" + p.read_text(encoding="utf-8", errors="ignore")[:1800]
                         except OSError:
                             pass
+        try:
+            from agents.swarm_orchestrator import SwarmOrchestrator
+            swarm_info = SwarmOrchestrator().run_swarm(user_msg, workspace_dir=sdir)
+            if swarm_info.get("apk_findings"):
+                ws_note += "\n\nنتائج وكيل APK:\n" + json.dumps(swarm_info["apk_findings"], ensure_ascii=False)
+        except Exception:
+            pass
+
         sys_prompt = (
-            "أنت ZeroHunter، مساعد ذكاء اصطناعي خبير تتحدث العربية بطبيعية. "
-            "أجب اعتماداً حصرياً على الملفات والسياق المرفق في الرسالة إذا وُجد [UPLOADED_WORKSPACE_CONTEXT]، وممنوع تماماً ذكر ملفات افتراضية مثل demo.c."
-            if "[UPLOADED_WORKSPACE_CONTEXT]" in user_msg
-            else "أنت ZeroHunter، مساعد أمني ذكي تتحدث العربية بطبيعية وتفحص الكود والملفات المرفوعة وتقترح خططاً وأفكاراً."
+            "أنت ZeroHunter، مساعد ذكاء اصطناعي خبير تتحدث العربية بطلاقة وطبيعية كاملة بدون اختصار مخل. "
+            "أجب اعتماداً على الملفات والسياق المرفق في الرسالة إذا وُجد [UPLOADED_WORKSPACE_CONTEXT]، واشرح بعمق."
         )
+        hist_blocks = ""
+        if isinstance(history, list):
+            for h in history[-8:]:
+                role_tag = "assistant" if h.get("role") == "assistant" else "user"
+                hist_blocks += f"<|im_start|>{role_tag}\n{str(h.get('text', ''))[:1200]}<|im_end|>\n"
         prompt = (
             f"<|im_start|>system\n{sys_prompt}<|im_end|>\n"
+            f"{hist_blocks}"
             f"<|im_start|>user\n{user_msg}{ws_note}<|im_end|>\n<|im_start|>assistant\n"
         )
-        out = llm(prompt, max_tokens=640, stop=["<|im_end|>"], echo=False, temperature=0.25)
+        out = llm(prompt, max_tokens=1536, stop=["<|im_end|>"], echo=False, temperature=0.65)
         return jsonify({"direct_reply": out["choices"][0]["text"].strip()})
 
     if not GITHUB_TOKEN:

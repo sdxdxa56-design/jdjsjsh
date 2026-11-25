@@ -19,7 +19,7 @@ OUTPUT_GGUF_DIR = os.environ.get("ZEROHUNTER_OUT_DIR", "./zerohunter_gguf")
 
 # نسب المسارات الأربعة المعتمدة:
 # 1) Memory/C++ (35%)  2) Web/APIs (70%)
-# 3) Servers/Configs (20%)  4) Agent Tool-Calling & Arabic Status (15%)
+# 3) Servers/Configs (10%)  4) Agent Tool-Calling & Arabic Status (15%)
 
 print("1. Loading base model:", BASE_MODEL)
 model, tokenizer = FastLanguageModel.from_pretrained(
