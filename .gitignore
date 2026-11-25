@@ -2,9 +2,7 @@
 .streamlit/secrets.toml
 crashes/
 corpus/
-reports/
 outputs/
-models/
 .hf_cache/
 .zh_models/
 __pycache__/

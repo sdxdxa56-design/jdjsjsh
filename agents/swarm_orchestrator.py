@@ -16,11 +16,18 @@ class SwarmOrchestrator:
         self.agent4 = GitHubAcceleratorAgent()
 
     def verify_all(self) -> Dict[str, object]:
+        chat_probe = self.agent1.suggest_context("اشرح ثغرات apk", top_k=1)
+        route_probe = self.agent2.route("افحص ملف apk واستخرج الثغرات")
         return {
             "agent1_loaded": len(self.agent1.memory) > 0,
-            "agent2_loaded": len(self.agent2.class_priors) > 0,
-            "agent3_loaded": len(self.agent3.rules) > 0,
+            "agent1_samples": len(self.agent1.memory),
+            "agent1_probe_ok": len(chat_probe) > 0,
+            "agent2_loaded": len(self.agent2.class_priors) >= 4,
+            "agent2_route_ok": route_probe.get("intent") == "scan_apk",
+            "agent3_loaded": len(self.agent3.rules) >= 10,
+            "agent3_rules": len(self.agent3.rules),
             "agent4_loaded": bool(self.agent4.profile),
+            "agent4_models_ok": not bool(self.agent4.profile.get("models_gitignored", False)),
         }
 
     def run_swarm(

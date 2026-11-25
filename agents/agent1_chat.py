@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple
 
 WEIGHTS_PATH = Path("models/agent1_chat_weights.json.gz")
 DATASET_PATH = Path("datasets/agent1_chat_train.jsonl")
+INTERACTIONS_LOG_PATH = Path("datasets/agent_interactions_log.jsonl")
 
 SEED_DIALOGUES: List[Tuple[str, str]] = [
     ("اشرح الكود ووظيفة التطبيق", "أقرأ بنية الملفات المرفوعة أولاً ثم أشرح غرض التطبيق، التقنيات المستخدمة، وأهم المكونات بدون تخمين."),
@@ -17,6 +18,8 @@ SEED_DIALOGUES: List[Tuple[str, str]] = [
     ("كيف نصلح ثغرة buffer overflow في c", "نستبدل الدوال غير المقيدة مثل strcpy وmemcpy بمقارنة الطول مع sizeof المخزن الهدف قبل النسخ."),
     ("كيف أسرع استجابة النموذج", "تشغيل GGUF داخل ذاكرة GPU دائمة عبر Colab T4 أو خادم Gemini السريع يختصر الزمن إلى 1-3 ثوانٍ."),
     ("حلل ملف AndroidManifest و strings", "أستخرج الحزمة والأذونات والمكونات المصدرة من AndroidManifest وأبحث عن المفاتيح والروابط المكشوفة في strings وDEX."),
+    ("لماذا يجب حفظ دردشة وعمل الوكلاء", "حفظ المحادثات والأخطاء يتيح قياس جودة الوكلاء وإعادة تدريب أي وكيل مقصر فوراً ليصل لأفضل أداء."),
+    ("ما دور الوكلاء الأربعة في المشروع", "الوكيل 1 للمحادثة والفهم، الوكيل 2 للقيادة والتوجيه، الوكيل 3 للفحص العميق وAPK، والوكيل 4 لتسريع GitHub وكاش الأوزان."),
 ]
 
 
@@ -49,6 +52,18 @@ class ChatLanguageAgent:
                                 samples.append((u, a[:600]))
                     except Exception:
                         continue
+
+        if INTERACTIONS_LOG_PATH.exists():
+            for line in INTERACTIONS_LOG_PATH.read_text(encoding="utf-8", errors="ignore").splitlines():
+                try:
+                    item = json.loads(line)
+                    if item.get("success", True):
+                        u = str(item.get("userInput") or "").strip()
+                        a = str(item.get("agentOutput") or "").strip()
+                        if len(u) >= 3 and len(a) >= 12 and not a.startswith("❌"):
+                            samples.append((u[:250], a[:600]))
+                except Exception:
+                    continue
 
         doc_freq: Counter = Counter()
         tokenized_docs: List[Tuple[Counter, str, str]] = []

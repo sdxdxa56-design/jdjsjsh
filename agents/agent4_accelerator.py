@@ -22,11 +22,15 @@ class GitHubAcceleratorAgent:
             if sz > 10 * 1024 * 1024:
                 oversized.append(mf)
 
+        gitignore_text = Path(".gitignore").read_text(encoding="utf-8", errors="ignore") if Path(".gitignore").exists() else ""
+        models_ignored = any(line.strip() in ("models", "models/", "/models/") for line in gitignore_text.splitlines())
+
         self.profile = {
             "agent": "agent4_accelerator",
             "flat_cache_dir": ".zh_models",
             "workflows_audited": workflows,
             "compact_weights_ok": len(oversized) == 0,
+            "models_gitignored": models_ignored,
             "oversized_files": oversized,
             "recommended_cpu_model": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
             "recommended_colab_model": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
