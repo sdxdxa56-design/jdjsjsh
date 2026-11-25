@@ -1,0 +1,68 @@
+name: ZeroHunter Swarm-10 Operations Room
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      target_prompt:
+        description: 'طلب الفحص الموجه لغرفة عمليات الـ 10 وكلاء'
+        required: true
+        type: string
+        default: 'افحص المستودع واكتشف الثغرات وأعد تقريراً مع الإصلاح'
+      publish_issue:
+        description: 'نشر تقرير الوكيل 10 (المؤرخ) في GitHub Issues'
+        required: false
+        type: string
+        default: 'true'
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  swarm10-run:
+    if: github.event_name == 'workflow_dispatch' || github.event.issue.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache Tiny 0.5B Base Model (Zero External APIs)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: zh-swarm10-qwen05b-v1
+
+      - name: Install Lightweight CPU Inference Stack
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python3 -m pip install transformers peft accelerate safetensors
+
+      - name: Run 10-Agent Sequential LoRA Pipeline (<=3.2GB RAM)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || '0' }}
+        run: |
+          PROMPT="${{ github.event.inputs.target_prompt || github.event.issue.body }}"
+          if [ "${{ github.event.inputs.publish_issue || 'true' }}" = "true" ]; then
+            python3 -m swarm10.operations_room --prompt "$PROMPT" --publish-issue
+          else
+            python3 -m swarm10.operations_room --prompt "$PROMPT"
+          fi
+
+      - name: Upload Swarm-10 Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm10-report-${{ github.run_id }}
+          path: reports/swarm10_report.md
+          if-no-files-found: ignore
