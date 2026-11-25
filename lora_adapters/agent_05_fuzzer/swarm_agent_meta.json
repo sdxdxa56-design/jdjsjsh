@@ -1,0 +1,7 @@
+{
+  "agent_id": "agent_05",
+  "role": "الفاحص العميق",
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "lora_rank": 8,
+  "samples": 2
+}

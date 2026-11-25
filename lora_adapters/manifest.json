@@ -1,0 +1,75 @@
+{
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "adapters": [
+    {
+      "agent_id": "agent_01",
+      "role": "المنسق",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_02",
+      "role": "الاستطلاع",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_03",
+      "role": "الويب",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_04",
+      "role": "التحليل الساكن",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_05",
+      "role": "الفاحص العميق",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_06",
+      "role": "المحلل الجنائي",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_07",
+      "role": "المستغل",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_08",
+      "role": "المدافع",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_09",
+      "role": "المدقق",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 2
+    },
+    {
+      "agent_id": "agent_10",
+      "role": "المؤرخ",
+      "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+      "lora_rank": 8,
+      "samples": 1
+    }
+  ]
+}

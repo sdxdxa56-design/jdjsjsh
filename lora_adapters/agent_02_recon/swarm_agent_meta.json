@@ -1,0 +1,7 @@
+{
+  "agent_id": "agent_02",
+  "role": "الاستطلاع",
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "lora_rank": 8,
+  "samples": 2
+}
