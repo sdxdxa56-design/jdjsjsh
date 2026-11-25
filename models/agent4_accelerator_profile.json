@@ -1,0 +1,16 @@
+{
+  "agent": "agent4_accelerator",
+  "flat_cache_dir": ".zh_models",
+  "workflows_audited": [
+    ".github/workflows/agent.yml",
+    ".github/workflows/auto-learn.yml",
+    ".github/workflows/build-image.yml",
+    ".github/workflows/train-agents.yml",
+    ".github/workflows/train-cloud.yml"
+  ],
+  "compact_weights_ok": true,
+  "models_gitignored": false,
+  "oversized_files": [],
+  "recommended_cpu_model": "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+  "recommended_colab_model": "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF"
+}
