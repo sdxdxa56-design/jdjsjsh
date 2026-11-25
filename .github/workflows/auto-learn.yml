@@ -47,4 +47,5 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add datasets/auto_curated.jsonl
           git diff --staged --quiet || git commit -m "Auto-curate latest security advisories into training dataset"
+          git pull --rebase origin main || true
           git push

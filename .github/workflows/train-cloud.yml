@@ -23,15 +23,18 @@ jobs:
       - name: Install Requirements
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install datasets huggingface_hub
+          python3 -m pip install requests huggingface_hub
 
-      - name: Build Dataset Index
+      - name: Verify Python & Swarm Integrity + Build Dataset Index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          python3 -c "import ast, pathlib; [ast.parse(p.read_text(encoding='utf-8')) for p in pathlib.Path('.').rglob('*.py')]"
+          python3 -m agents.swarm_orchestrator --verify || true
           python3 -c "from core.knowledge import build_curated_dataset; build_curated_dataset()"
           git config --global user.name "ZeroHunter Agent"
           git config --global user.email "agent@zerohunter.internal"
           git add datasets/ || true
-          git commit -m "chore: update analysis dataset index [skip ci]" || echo "No changes"
+          git diff --staged --quiet || git commit -m "chore: update analysis dataset index [skip ci]"
+          git pull --rebase origin main || true
           git push || echo "No push needed"
