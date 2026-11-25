@@ -1,21 +1,17 @@
-name: ZeroHunter Deep Cloud Trainer
+name: ZeroHunter Code Quality & Dataset Sync
 
 on:
   workflow_dispatch:
-    inputs:
-      epochs:
-        description: 'Training Epochs (default 3)'
-        required: false
-        default: '3'
-        type: string
+  push:
+    branches: [ "main" ]
 
 permissions:
   contents: write
 
 jobs:
-  cloud-train:
+  sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -24,25 +20,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Training Dependencies
+      - name: Install Requirements
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install transformers datasets accelerate huggingface_hub unsloth gguf protobuf sentencepiece
+          python3 -m pip install datasets huggingface_hub
 
-      - name: Run Deep Training & GGUF Export
+      - name: Build Dataset Index
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python3 -c "from core.knowledge import build_curated_dataset; build_curated_dataset()"
-          python3 train.py || true
-
-      - name: Upload and Publish GGUF Model to Hugging Face
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          if [ -n "$HF_TOKEN" ]; then
-            python3 upload_hf.py
-          else
-            echo "HF_TOKEN not set, skipping upload."
-          fi
+          git config --global user.name "ZeroHunter Agent"
+          git config --global user.email "agent@zerohunter.internal"
+          git add datasets/ || true
+          git commit -m "chore: update analysis dataset index [skip ci]" || echo "No changes"
+          git push || echo "No push needed"
