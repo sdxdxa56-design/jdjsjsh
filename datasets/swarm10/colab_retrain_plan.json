@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-11-26T00:10:46.393Z",
+  "repo_slug": "sdxdxa56-design/jdjsjsh",
+  "branch": "main",
+  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "target_agents": [],
+  "epochs": 4,
+  "rank": 8,
+  "reasons_by_agent": {},
+  "colab_notebook_path": "notebooks/ZeroHunter_Swarm10_Targeted_Retrain.ipynb",
+  "colab_url": "https://colab.research.google.com/github/sdxdxa56-design/jdjsjsh/blob/main/notebooks/ZeroHunter_Swarm10_Targeted_Retrain.ipynb",
+  "colab_command": "python3 -m swarm10.colab_train_10_lora --agent all --epochs 3 --rank 8 --output-dir lora_adapters",
+  "steps": [
+    "جميع الوكلاء العشرة يملكون محولات LoRA مرفوعة ويعملون بجودة عالية دون حاجة لإعادة التدريب حالياً."
+  ]
+}
