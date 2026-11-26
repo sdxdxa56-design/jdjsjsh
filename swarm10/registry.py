@@ -259,10 +259,34 @@ def build_swarm10_datasets(base_dir: str = "datasets/swarm10") -> Dict[str, Any]
     written: List[str] = []
     total_examples = 0
 
+    # Ingest any saved chat interaction logs to reinforce weak responses
+    extra_by_agent: Dict[str, List[Dict[str, str]]] = {}
+    logs_path = out_dir / "interactions_log.jsonl"
+    if logs_path.exists():
+        for raw_line in logs_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if not raw_line.strip():
+                continue
+            try:
+                log_item = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            aid = str(log_item.get("agentId") or log_item.get("agent_id") or "")
+            prompt_txt = str(log_item.get("prompt") or "").strip()
+            resp_txt = str(log_item.get("response") or "").strip()
+            if aid and prompt_txt and resp_txt and log_item.get("passed"):
+                extra_by_agent.setdefault(aid, []).append(
+                    {
+                        "instruction": "استجب لطلب المستخدم أثناء المحادثة بدقة وتخصص بدون أخطاء.",
+                        "input": prompt_txt,
+                        "output": resp_txt,
+                    }
+                )
+
     for agent in SWARM_AGENTS:
         ds_file = out_dir / f"{agent['id']}_train.jsonl"
         rows = []
-        for ex in agent.get("examples", []):
+        merged_examples = list(agent.get("examples", [])) + extra_by_agent.get(agent["id"], [])
+        for ex in merged_examples:
             rows.append(
                 json.dumps(
                     {

@@ -106,28 +106,56 @@ def train_single_adapter(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train all 10 specialized LoRA adapters on Colab GPU")
+    parser = argparse.ArgumentParser(description="Train all or targeted LoRA adapters on Colab GPU")
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--rank", type=int, default=LORA_RANK)
     parser.add_argument("--output-dir", type=str, default="lora_adapters")
-    parser.add_argument("--agent", type=str, default="all")
+    parser.add_argument("--agent", type=str, default="all", help="all or comma-separated IDs like agent_01,agent_03")
+    parser.add_argument("--use-plan", action="store_true", help="Read datasets/swarm10/colab_retrain_plan.json")
     args = parser.parse_args()
 
     build_swarm10_datasets()
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    summary = []
+    target_spec = args.agent
+    epochs = args.epochs
+    rank = args.rank
+
+    plan_file = Path("datasets/swarm10/colab_retrain_plan.json")
+    if args.use_plan and plan_file.exists():
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+        plan_targets = plan.get("target_agents") or []
+        if plan_targets:
+            target_spec = ",".join(str(x) for x in plan_targets)
+        epochs = int(plan.get("epochs") or epochs)
+        rank = int(plan.get("rank") or rank)
+        print(f"[Plan] Retraining target agents: {target_spec} (epochs={epochs}, rank={rank})", flush=True)
+
+    selected_ids = None if target_spec == "all" else {s.strip() for s in target_spec.split(",") if s.strip()}
+
+    existing_by_id = {}
+    manifest_path = out_dir / "manifest.json"
+    if manifest_path.exists():
+        try:
+            old_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for item in old_manifest.get("adapters", []):
+                if item.get("agent_id"):
+                    existing_by_id[item["agent_id"]] = item
+        except json.JSONDecodeError:
+            pass
+
     for agent in SWARM_AGENTS:
-        if args.agent != "all" and args.agent != agent["id"]:
+        if selected_ids is not None and agent["id"] not in selected_ids:
             continue
         ds_path = Path("datasets/swarm10") / f"{agent['id']}_train.jsonl"
-        meta = train_single_adapter(agent, ds_path, out_dir, epochs=args.epochs, rank=args.rank)
-        summary.append(meta)
+        meta = train_single_adapter(agent, ds_path, out_dir, epochs=epochs, rank=rank)
+        existing_by_id[agent["id"]] = meta
         print(json.dumps({"trained": meta}, ensure_ascii=False), flush=True)
 
-    (out_dir / "manifest.json").write_text(
-        json.dumps({"base_model": BASE_MODEL_ID, "adapters": summary}, ensure_ascii=False, indent=2),
+    ordered_summary = [existing_by_id[a["id"]] for a in SWARM_AGENTS if a["id"] in existing_by_id]
+    manifest_path.write_text(
+        json.dumps({"base_model": BASE_MODEL_ID, "adapters": ordered_summary}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
