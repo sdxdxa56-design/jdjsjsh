@@ -137,17 +137,30 @@ def save_self_play_sample(system_prompt: str, user_prompt: str, assistant_reply:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def _stream_download(url: str, dest: Path) -> str:
+def _stream_download(url: str, dest: Path, max_attempts: int = 3) -> str:
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".gguf.part")
-    with requests.get(url, stream=True, timeout=60, allow_redirects=True) as resp:
-        resp.raise_for_status()
-        with tmp.open("wb") as fh:
-            for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    fh.write(chunk)
-    tmp.replace(dest)
-    return str(dest)
+    last_err: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if tmp.exists():
+                tmp.unlink(missing_ok=True)
+            with requests.get(url, stream=True, timeout=(15, 120), allow_redirects=True) as resp:
+                resp.raise_for_status()
+                with tmp.open("wb") as fh:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            fh.write(chunk)
+            if not tmp.exists() or tmp.stat().st_size < 10_000_000:
+                raise RuntimeError("Downloaded GGUF file appears truncated")
+            tmp.replace(dest)
+            return str(dest)
+        except Exception as exc:
+            last_err = exc
+            tmp.unlink(missing_ok=True)
+            if attempt < max_attempts:
+                time.sleep(2 * attempt)
+    raise RuntimeError(f"Model download failed after {max_attempts} attempts: {last_err}")
 
 
 def load_model() -> Llama:
@@ -171,7 +184,7 @@ def load_model() -> Llama:
                     f"https://huggingface.co/{HF_REPO}/resolve/main/{GGUF_FILE}",
                     headers=head_headers,
                     allow_redirects=True,
-                    timeout=4,
+                    timeout=5,
                 )
                 if probe.status_code == 200:
                     model_file = hf_hub_download(repo_id=HF_REPO, filename=GGUF_FILE, token=HF_TOKEN)
@@ -200,15 +213,18 @@ def load_model() -> Llama:
             use_mmap=True,
             verbose=False,
         )
-    except Exception:
-        return Llama(
-            model_path=model_file,
-            n_ctx=2048,
-            n_batch=256,
-            n_threads=threads,
-            use_mmap=True,
-            verbose=False,
-        )
+    except Exception as first_exc:
+        try:
+            return Llama(
+                model_path=model_file,
+                n_ctx=2048,
+                n_batch=256,
+                n_threads=threads,
+                use_mmap=True,
+                verbose=False,
+            )
+        except Exception as second_exc:
+            raise RuntimeError(f"Llama init failed ({first_exc}); fallback failed ({second_exc})") from second_exc
 
 
 def _run_agent() -> None:
